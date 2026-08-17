@@ -25,7 +25,7 @@ export default function AuditLogs() {
         .on('postgres_changes', {
           event: '*',
           schema: 'public',
-          table: 'roundups_audit_logs_20240520'
+          table: 'roundups_audit_logs'
         }, (payload) => {
           // You could optimize this by updating state directly, but fetching ensures consistency
           fetchLogs();
@@ -53,7 +53,7 @@ export default function AuditLogs() {
     setLoading(true);
     try {
       let query = supabase
-        .from('roundups_audit_logs_20240520')
+        .from('roundups_audit_logs')
         .select('*')
         .order('created_at', { ascending: false });
 
