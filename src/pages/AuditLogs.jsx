@@ -199,7 +199,10 @@ export default function AuditLogs() {
               {!loading && filteredLogs.length === 0 && (
                 <tr>
                   <td colSpan="5" className="px-6 py-12 text-center text-slate-500">
-                    No logs found matching your criteria.
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <SafeIcon icon={FiIcons.FiInbox} className="text-4xl text-slate-700 mb-2" />
+                      <p className="text-sm">No automation jobs found. Start a new campaign to see telemetry here.</p>
+                    </div>
                   </td>
                 </tr>
               )}

@@ -12,6 +12,18 @@ export default {
     const startTime = Date.now();
     console.log(`[Ingress] Received ${request.method} ${request.url}`);
 
+    // Handle CORS preflight requests
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        },
+      });
+    }
+
     if (request.method !== "POST" || new URL(request.url).pathname !== "/api/v1/roundups/trigger") {
       return new Response("Not Found", { status: 404 });
     }
@@ -111,7 +123,10 @@ export default {
 
     return new Response(JSON.stringify({ status: "Success", external_status: roundupsRes.status }), {
       status: 200,
-      headers: { "Content-Type": "application/json" }
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*"
+      }
     });
   }
 };

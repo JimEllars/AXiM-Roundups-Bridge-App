@@ -8,6 +8,16 @@ const { FiX, FiClock, FiActivity, FiExternalLink, FiAlertCircle, FiTerminal, FiC
 export default function LogDetailsDrawer({ log, isOpen, onClose }) {
   const [copied, setCopied] = React.useState(false);
 
+  const parseErrorDetails = (details) => {
+    if (!details) return null;
+    try {
+      const parsed = JSON.parse(details);
+      return JSON.stringify(parsed, null, 2);
+    } catch (e) {
+      return details;
+    }
+  };
+
   if (!isOpen || !log) return null;
 
   const copyToClipboard = (text) => {
@@ -106,10 +116,12 @@ export default function LogDetailsDrawer({ log, isOpen, onClose }) {
                     <SafeIcon icon={FiExternalLink} />
                   </a>
                 </div>
-              ) : log.error_details ? (
-                <pre className="text-xs text-red-400 overflow-x-auto whitespace-pre-wrap font-mono">
-                  {log.error_details}
-                </pre>
+              ) : log.status === 'failed' && log.error_details ? (
+                <div className="bg-red-950/30 border border-red-900/50 rounded-lg p-3 overflow-x-auto">
+                  <pre className="text-xs text-red-400 font-mono whitespace-pre-wrap">
+                    {parseErrorDetails(log.error_details)}
+                  </pre>
+                </div>
               ) : (
                 <div className="text-xs text-slate-500 italic">No output data available yet. Workflow is currently {log.status}.</div>
               )}
