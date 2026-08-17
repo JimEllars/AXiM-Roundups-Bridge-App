@@ -21,7 +21,7 @@ export default function NewCampaignModal({ isOpen, onClose, onRefresh }) {
 
     try {
       const { error } = await supabase
-        .from('roundups_audit_logs_20240520')
+        .from('roundups_audit_logs')
         .insert([{
           campaign_id: formData.campaign_id,
           roundups_job_id: formData.roundups_job_id,

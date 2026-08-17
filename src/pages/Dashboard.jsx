@@ -49,7 +49,7 @@ export default function Dashboard() {
     setLoading(true);
     try {
       const { data, error } = await supabase
-        .from('roundups_audit_logs_20240520')
+        .from('roundups_audit_logs')
         .select('*')
         .order('created_at', { ascending: false });
 
@@ -132,7 +132,7 @@ export default function Dashboard() {
         <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex flex-col">
           <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-slate-950/30">
             <h3 className="text-lg font-semibold text-white">Recent Activity</h3>
-            <a href="#/logs" className="text-sm text-blue-400 hover:text-blue-300 font-medium">View All Logs</a>
+            <a href="/logs" className="text-sm text-blue-400 hover:text-blue-300 font-medium">View All Logs</a>
           </div>
           <div className="overflow-x-auto flex-1">
             <table className="w-full text-left">
@@ -147,6 +147,9 @@ export default function Dashboard() {
               <tbody className="divide-y divide-slate-800">
                 {recentLogs.map((log) => (
                   <tr key={log.id} className="hover:bg-slate-800/30 transition-colors group">
+                    <td className="px-6 py-4">
+                      <span className="font-medium text-slate-200">{log.campaign_id}</span>
+                    </td>
                     <td className="px-6 py-4">
                       {log.status === 'failed' ? (
                         <button
