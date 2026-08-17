@@ -16,22 +16,62 @@ export default function AuditLogs() {
 
   useEffect(() => {
     fetchLogs();
+
+    // Set up real-time subscription
+    let channel;
+    try {
+      channel = supabase
+        .channel('audit-logs-updates')
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'roundups_audit_logs_20240520'
+        }, (payload) => {
+          // You could optimize this by updating state directly, but fetching ensures consistency
+          fetchLogs();
+        })
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            console.log('Subscribed to audit logs channel');
+          }
+          if (status === 'CHANNEL_ERROR') {
+            console.error('Error subscribing to audit logs channel');
+          }
+        });
+    } catch (err) {
+      console.error('Error setting up real-time subscription:', err);
+    }
+
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, [statusFilter]);
 
   const fetchLogs = async () => {
     setLoading(true);
-    let query = supabase
-      .from('roundups_audit_logs_20240520')
-      .select('*')
-      .order('created_at', { ascending: false });
+    try {
+      let query = supabase
+        .from('roundups_audit_logs_20240520')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-    if (statusFilter !== 'all') {
-      query = query.eq('status', statusFilter);
+      if (statusFilter !== 'all') {
+        query = query.eq('status', statusFilter);
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        console.error('Error fetching logs:', error);
+      } else if (data) {
+        setLogs(data);
+      }
+    } catch (err) {
+      console.error('Unexpected error fetching logs:', err);
+    } finally {
+      setLoading(false);
     }
-
-    const { data } = await query;
-    if (data) setLogs(data);
-    setLoading(false);
   };
 
   const filteredLogs = logs.filter(log => 
@@ -41,9 +81,11 @@ export default function AuditLogs() {
 
   const getStatusIcon = (status) => {
     switch (status) {
-      case 'completed': return { icon: FiCheckCircle, color: 'text-emerald-400' };
-      case 'failed': return { icon: FiAlertCircle, color: 'text-red-400' };
-      default: return { icon: FiClock, color: 'text-amber-400' };
+      case 'completed': return { icon: FiCheckCircle, color: 'text-emerald-400', spin: false };
+      case 'failed': return { icon: FiAlertCircle, color: 'text-red-400', spin: false };
+      case 'generating':
+      case 'processing': return { icon: FiClock, color: 'text-amber-400', spin: true };
+      default: return { icon: FiClock, color: 'text-amber-400', spin: false };
     }
   };
 
@@ -123,7 +165,7 @@ export default function AuditLogs() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
-                        <SafeIcon icon={status.icon} className={status.color} />
+                        <SafeIcon icon={status.icon} className={`${status.color} ${status.spin ? 'animate-spin' : ''}`} />
                         <span className={`text-xs font-medium capitalize ${status.color}`}>
                           {log.status}
                         </span>

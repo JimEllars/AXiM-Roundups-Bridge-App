@@ -4,6 +4,7 @@ import SafeIcon from '../components/common/SafeIcon';
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 import NewCampaignModal from '../components/dashboard/NewCampaignModal';
+import LogDetailsDrawer from '../components/logs/LogDetailsDrawer';
 
 const { FiTrendingUp, FiCheckCircle, FiClock, FiAlertCircle, FiPlus, FiWifi, FiRefreshCw } = FiIcons;
 
@@ -13,6 +14,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLive, setIsLive] = useState(false);
+  const [selectedLog, setSelectedLog] = useState(null);
 
   useEffect(() => {
     fetchDashboardData();
@@ -29,7 +31,14 @@ export default function Dashboard() {
         fetchDashboardData();
         setTimeout(() => setIsLive(false), 3000);
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Dashboard subscribed to real-time updates');
+        }
+        if (status === 'CHANNEL_ERROR') {
+          console.error('Dashboard channel error');
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
@@ -38,23 +47,30 @@ export default function Dashboard() {
 
   const fetchDashboardData = async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from('roundups_audit_logs_20240520')
-      .select('*')
-      .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from('roundups_audit_logs_20240520')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-    if (data) {
-      setRecentLogs(data.slice(0, 8));
-      const counts = data.reduce((acc, log) => {
-        acc.total++;
-        if (acc[log.status] !== undefined) {
-          acc[log.status]++;
-        }
-        return acc;
-      }, { total: 0, completed: 0, generating: 0, failed: 0 });
-      setStats(counts);
+      if (error) {
+        console.error('Error fetching dashboard data:', error);
+      } else if (data) {
+        setRecentLogs(data.slice(0, 8));
+        const counts = data.reduce((acc, log) => {
+          acc.total++;
+          if (acc[log.status] !== undefined) {
+            acc[log.status]++;
+          }
+          return acc;
+        }, { total: 0, completed: 0, generating: 0, failed: 0 });
+        setStats(counts);
+      }
+    } catch (err) {
+      console.error('Unexpected error fetching dashboard data:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const statCards = [
@@ -132,18 +148,24 @@ export default function Dashboard() {
                 {recentLogs.map((log) => (
                   <tr key={log.id} className="hover:bg-slate-800/30 transition-colors group">
                     <td className="px-6 py-4">
-                      <div className="font-mono text-xs text-slate-300 bg-slate-950/50 px-2 py-1 rounded inline-block">
-                        {log.campaign_id}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-tighter ${
-                        log.status === 'completed' ? 'bg-emerald-400/10 text-emerald-400 border border-emerald-400/20' : 
-                        log.status === 'failed' ? 'bg-red-400/10 text-red-400 border border-red-400/20' : 
-                        'bg-amber-400/10 text-amber-400 border border-amber-400/20'
-                      }`}>
-                        {log.status}
-                      </span>
+                      {log.status === 'failed' ? (
+                        <button
+                          onClick={() => setSelectedLog(log)}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-tighter bg-red-400/10 text-red-400 border border-red-400/20 hover:bg-red-400/20 transition-colors cursor-pointer"
+                          title="View Error Details"
+                        >
+                          {log.status} <SafeIcon icon={FiIcons.FiExternalLink} size={10} />
+                        </button>
+                      ) : (
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-tighter ${
+                          log.status === 'completed' ? 'bg-emerald-400/10 text-emerald-400 border border-emerald-400/20' :
+                          log.status === 'generating' || log.status === 'processing' ? 'bg-amber-400/10 text-amber-400 border border-amber-400/20' :
+                          'bg-amber-400/10 text-amber-400 border border-amber-400/20'
+                        }`}>
+                          {(log.status === 'generating' || log.status === 'processing') && <SafeIcon icon={FiIcons.FiRefreshCw} size={10} className="animate-spin" />}
+                          {log.status}
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-xs text-slate-500 font-medium">
                       {format(new Date(log.created_at), 'HH:mm:ss')}
@@ -204,6 +226,12 @@ export default function Dashboard() {
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
         onRefresh={fetchDashboardData}
+      />
+
+      <LogDetailsDrawer
+        log={selectedLog}
+        isOpen={!!selectedLog}
+        onClose={() => setSelectedLog(null)}
       />
     </div>
   );
