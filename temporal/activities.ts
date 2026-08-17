@@ -8,7 +8,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const ROUNDUPS_API_KEY = process.env.ROUNDUPS_API_KEY || '';
 
 export interface RoundupStatusResponse {
-  state: 'generating' | 'draft' | 'timeout' | 'error';
+  state: 'generating' | 'draft' | 'timeout' | 'error' | string;
   article: any | null;
   errors: any | null;
 }
@@ -41,40 +41,42 @@ export async function checkRoundupStatus(roundupsJobId: string): Promise<Roundup
 }
 
 /**
- * Updates the Supabase audit log for a successful roundup generation.
+ * Updates the Supabase audit log based on the final API response.
  */
-export async function finalizeRoundupLog(campaignId: string, roundupsJobId: string, articleData: any): Promise<void> {
-  const { error } = await supabase
-    .from('roundups_audit_logs')
-    .update({
-      status: 'completed',
-      article_id: articleData?.id,
-      article_url: articleData?.url || null, // Logs generated URL if available
-      updated_at: new Date().toISOString(),
-    })
-    .eq('campaign_id', campaignId)
-    .eq('roundups_job_id', roundupsJobId);
+export async function finalizeRoundupLog(campaignId: string, roundupsJobId: string, apiResponse: RoundupStatusResponse): Promise<void> {
+  if (apiResponse.state === 'draft' && !apiResponse.errors) {
+    const { error } = await supabase
+      .from('roundups_audit_logs')
+      .update({
+        status: 'completed',
+        article_id: apiResponse.article?.id || null,
+        article_url: apiResponse.article?.url || null, // Logs generated URL if available
+        updated_at: new Date().toISOString(),
+      })
+      .eq('campaign_id', campaignId)
+      .eq('roundups_job_id', roundupsJobId);
 
-  if (error) {
-    throw new Error(`Failed to finalize roundup log in Supabase: ${error.message}`);
-  }
-}
+    if (error) {
+      throw new Error(`Failed to finalize roundup log in Supabase: ${error.message}`);
+    }
+  } else {
+    // Failure cases: timeout, errors, or any other non-draft states
+    const errorString = apiResponse.errors
+          ? JSON.stringify(apiResponse.errors)
+          : `Job terminated with unexpected state: ${apiResponse.state}`;
 
-/**
- * Updates the Supabase audit log for a failed roundup generation.
- */
-export async function failRoundupLog(campaignId: string, roundupsJobId: string, errorString: string): Promise<void> {
-  const { error } = await supabase
-    .from('roundups_audit_logs')
-    .update({
-      status: 'failed',
-      error_details: errorString,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('campaign_id', campaignId)
-    .eq('roundups_job_id', roundupsJobId);
+    const { error } = await supabase
+      .from('roundups_audit_logs')
+      .update({
+        status: 'failed',
+        error_details: errorString,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('campaign_id', campaignId)
+      .eq('roundups_job_id', roundupsJobId);
 
-  if (error) {
-    throw new Error(`Failed to log error to Supabase: ${error.message}`);
+    if (error) {
+      throw new Error(`Failed to log error to Supabase: ${error.message}`);
+    }
   }
 }
