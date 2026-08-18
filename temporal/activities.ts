@@ -1,9 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
+import * as dotenv from 'dotenv';
+dotenv.config();
 
 // Initialize Supabase client
 const supabaseUrl = process.env.SUPABASE_URL || '';
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseKey);
+let supabase: any;
+if (supabaseUrl && supabaseKey) {
+  supabase = createClient(supabaseUrl, supabaseKey);
+}
 
 const ROUNDUPS_API_KEY = process.env.ROUNDUPS_API_KEY || '';
 
@@ -44,6 +49,10 @@ export async function checkRoundupStatus(roundupsJobId: string): Promise<Roundup
  * Updates the Supabase audit log based on the final API response.
  */
 export async function finalizeRoundupLog(campaignId: string, roundupsJobId: string, apiResponse: RoundupStatusResponse): Promise<void> {
+  if (!supabase) {
+    throw new Error('Supabase client is not initialized');
+  }
+
   if (apiResponse.state === 'draft' && !apiResponse.errors) {
     const { error } = await supabase
       .from('roundups_audit_logs')

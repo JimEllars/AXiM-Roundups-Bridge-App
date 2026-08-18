@@ -1,5 +1,5 @@
 import { proxyActivities, sleep } from '@temporalio/workflow';
-import type * as activities from './activities';
+import type * as activities from './activities.js';
 
 // Configure proxy activities with native exponential backoff and retry policies
 // This ensures that unexpected API downtime (e.g., 502 Bad Gateway) is handled safely.
