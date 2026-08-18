@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 .env
 roundups-edge-worker/.dev.vars
+temporal-rest-gateway/node_modules
+temporal-rest-gateway/dist
+temporal-rest-gateway/.env
