@@ -1,15 +1,14 @@
 import React, { useState } from 'react';
 import * as FiIcons from 'react-icons/fi';
 import SafeIcon from '../common/SafeIcon';
-import { supabase } from '../../lib/supabase';
 
-const { FiX, FiInfo, FiLayers, FiLink } = FiIcons;
+const { FiX, FiInfo, FiLayers } = FiIcons;
 
 export default function NewCampaignModal({ isOpen, onClose, onRefresh }) {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [formData, setFormData] = useState({
     campaign_id: '',
-    roundups_job_id: '',
     notes: ''
   });
 
@@ -18,24 +17,34 @@ export default function NewCampaignModal({ isOpen, onClose, onRefresh }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setError(null);
+
+    const workerUrl = import.meta.env.VITE_EDGE_WORKER_URL;
+    const apiSecret = import.meta.env.VITE_EDGE_API_SECRET;
+
+    if (!workerUrl || !apiSecret) {
+      console.warn("Missing VITE_EDGE_WORKER_URL or VITE_EDGE_API_SECRET environment variables.");
+    }
 
     try {
-      const { error } = await supabase
-        .from('roundups_audit_logs')
-        .insert([{
-          campaign_id: formData.campaign_id,
-          roundups_job_id: formData.roundups_job_id,
-          status: 'generating',
-          created_at: new Date().toISOString()
-        }]);
+      const response = await fetch(`${workerUrl || ''}/api/v1/roundups/trigger`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiSecret || ''}`
+        },
+        body: JSON.stringify({ campaign_id: formData.campaign_id })
+      });
 
-      if (error) throw error;
+      if (!response.ok) {
+        throw new Error(`Failed to start campaign: ${response.status} ${response.statusText}`);
+      }
       
       onRefresh();
       onClose();
-      setFormData({ campaign_id: '', roundups_job_id: '', notes: '' });
+      setFormData({ campaign_id: '', notes: '' });
     } catch (err) {
-      alert('Error creating campaign: ' + err.message);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
@@ -53,6 +62,12 @@ export default function NewCampaignModal({ isOpen, onClose, onRefresh }) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-red-400 text-sm">
+              {error}
+            </div>
+          )}
+
           <div className="space-y-4">
             <div className="space-y-1">
               <label className="text-sm font-medium text-slate-300">Internal Campaign ID</label>
@@ -65,21 +80,6 @@ export default function NewCampaignModal({ isOpen, onClose, onRefresh }) {
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-12 pr-4 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                   value={formData.campaign_id}
                   onChange={(e) => setFormData({...formData, campaign_id: e.target.value})}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-slate-300">Roundups.AI Job ID</label>
-              <div className="relative">
-                <SafeIcon icon={FiLink} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
-                <input 
-                  type="text" 
-                  required
-                  placeholder="Enter the Job ID from Roundups dashboard"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-12 pr-4 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                  value={formData.roundups_job_id}
-                  onChange={(e) => setFormData({...formData, roundups_job_id: e.target.value})}
                 />
               </div>
             </div>
