@@ -1,6 +1,8 @@
 import { buildPayload } from "./payloadBuilder.js";
 
 export interface Env {
+  TEMPORAL_REST_URL: string;
+  TEMPORAL_API_KEY: string;
   ALLOWED_ORIGIN?: string;
   API_SECRET: string;
   ROUNDUPS_API_KEY: string;
@@ -40,7 +42,7 @@ function response(
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
     if (request.method === "OPTIONS") {
@@ -139,6 +141,32 @@ export default {
     if (!auditLogResponse.ok) {
       return response("Internal Server Error: Failed to write audit log", 500, request, env);
     }
+
+    ctx.waitUntil((async () => {
+      try {
+        const temporalResponse = await fetch(env.TEMPORAL_REST_URL, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${env.TEMPORAL_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+             // Example mapping to the temporal rest endpoint assuming campaign_id and roundups_job_id are arguments
+             campaign_id: payload.campaign_id,
+             roundups_job_id: roundupsResult.id,
+          }),
+        });
+
+        if (!temporalResponse.ok) {
+           console.error(`Failed to trigger Temporal workflow: ${temporalResponse.status} ${temporalResponse.statusText}`);
+        } else {
+           console.log(`Temporal workflow triggered successfully for job: ${roundupsResult.id}`);
+        }
+      } catch (e) {
+        console.error("Exception caught while triggering Temporal workflow:", e);
+      }
+    })());
+
 
     return response(
       JSON.stringify({ status: "accepted", roundups_job_id: roundupsResult.id }),
