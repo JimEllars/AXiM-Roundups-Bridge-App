@@ -1,14 +1,26 @@
 import React, { useState } from 'react';
 import * as FiIcons from 'react-icons/fi';
 import SafeIcon from '../common/SafeIcon';
+import toast from 'react-hot-toast';
 
 const { FiX, FiInfo, FiLayers } = FiIcons;
+
+
+const formatKeywords = (input) => {
+  if (!input) return '';
+  return input
+    .split(/[,;]+/)
+    .map((k) => k.trim())
+    .filter((k) => k.length > 0)
+    .join(',');
+};
 
 export default function NewCampaignModal({ isOpen, onClose, onRefresh }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [formData, setFormData] = useState({
     campaign_id: '',
+    keywords: '',
     notes: ''
   });
 
@@ -33,18 +45,20 @@ export default function NewCampaignModal({ isOpen, onClose, onRefresh }) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiSecret || ''}`
         },
-        body: JSON.stringify({ campaign_id: formData.campaign_id })
+        body: JSON.stringify({ campaign_id: formData.campaign_id, keywords: formatKeywords(formData.keywords) })
       });
 
       if (!response.ok) {
         throw new Error(`Failed to start campaign: ${response.status} ${response.statusText}`);
       }
       
+      toast.success('Campaign Generation Initiated');
       onRefresh();
       onClose();
-      setFormData({ campaign_id: '', notes: '' });
+      setFormData({ campaign_id: '', keywords: '', notes: '' });
     } catch (err) {
       setError(err.message);
+      toast.error(err.message);
     } finally {
       setLoading(false);
     }
@@ -83,6 +97,20 @@ export default function NewCampaignModal({ isOpen, onClose, onRefresh }) {
                 />
               </div>
             </div>
+            <div className="space-y-1 mt-4">
+              <label className="text-sm font-medium text-slate-300">SEO Keywords (Optional)</label>
+              <div className="relative">
+                <SafeIcon icon={FiLayers} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="text"
+                  placeholder="e.g. retail tech, AI sales, Q2 trends"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-12 pr-4 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  value={formData.keywords || ''}
+                  onChange={(e) => setFormData({...formData, keywords: e.target.value})}
+                />
+              </div>
+            </div>
+
           </div>
 
           <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-4 flex gap-3">

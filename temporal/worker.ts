@@ -2,7 +2,7 @@ import { Worker, NativeConnection } from '@temporalio/worker';
 import * as activities from './activities.js';
 import * as dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
-import path from 'path';
+import * as path from 'path';
 
 dotenv.config();
 
