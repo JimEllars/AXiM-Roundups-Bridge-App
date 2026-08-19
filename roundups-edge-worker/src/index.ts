@@ -61,7 +61,7 @@ export default {
       return response("Unauthorized", 401, request, env);
     }
 
-    let payload: { campaign_id?: string };
+    let payload: { campaign_id?: string; keywords?: string };
     try {
       payload = await request.json();
     } catch {
@@ -103,7 +103,7 @@ export default {
         campaign_id: String(campaign.id ?? payload.campaign_id),
         product_urls: Array.isArray(campaign.product_urls) ? campaign.product_urls.map(String) : undefined,
         affiliate_url: typeof campaign.affiliate_url === "string" ? campaign.affiliate_url : undefined,
-        keywords: typeof campaign.keywords === "string" ? campaign.keywords : undefined,
+        keywords: payload.keywords || (typeof campaign.keywords === "string" ? campaign.keywords : undefined),
         is_software: campaign.is_software === true,
       })),
     });

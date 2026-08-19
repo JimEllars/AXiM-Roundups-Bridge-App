@@ -6,10 +6,12 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import AuditLogs from './pages/AuditLogs';
 import Settings from './pages/Settings';
+import { Toaster } from 'react-hot-toast';
 
 function App() {
   return (
     <Router>
+      <Toaster position="top-right" toastOptions={{ style: { zIndex: 99999 } }} />
       <Routes>
         {/* Auth Route */}
         <Route path="/login" element={<Login />} />
