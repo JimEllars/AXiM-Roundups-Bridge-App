@@ -17,10 +17,10 @@ const authenticate = (req: Request, res: Response, next: NextFunction) => {
   }
 
   const token = authHeader.split(' ')[1];
-  const apiSecret = process.env.API_SECRET;
+  const apiSecret = process.env.TEMPORAL_REST_SECRET;
 
   if (!apiSecret) {
-    console.error('API_SECRET is not configured in the environment.');
+    console.error('TEMPORAL_REST_SECRET is not configured in the environment.');
     return res.status(500).json({ error: 'Internal Server Error' });
   }
 
@@ -64,17 +64,17 @@ async function getTemporalClient() {
 
 app.post('/api/workflows/start', authenticate, async (req: Request, res: Response) => {
   try {
-    const { campaign_id, jobId } = req.body;
+    const { campaign_id, roundups_job_id } = req.body;
 
-    if (!campaign_id || !jobId) {
-      return res.status(400).json({ error: 'Missing campaign_id or jobId' });
+    if (!campaign_id || !roundups_job_id) {
+      return res.status(400).json({ error: 'Missing campaign_id or roundups_job_id' });
     }
 
     const client = await getTemporalClient();
-    const workflowId = `roundup-generation-${jobId}`;
+    const workflowId = `roundup-generation-${roundups_job_id}`;
 
     await client.workflow.start('RoundupGenerationWorkflow', {
-      args: [campaign_id, jobId],
+      args: [campaign_id, roundups_job_id],
       taskQueue: 'roundups-queue',
       workflowId: workflowId,
     });
