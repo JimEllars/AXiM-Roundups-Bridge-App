@@ -1,7 +1,7 @@
 import * as FiIcons from 'react-icons/fi';
 import SafeIcon from '../components/common/SafeIcon';
 import { supabase } from '../lib/supabase';
-import { format, subDays, startOfDay, isAfter } from 'date-fns';
+
 import React, { useEffect, useState, Suspense, lazy } from 'react';
 import NewCampaignModal from '../components/dashboard/NewCampaignModal';
 import LogDetailsDrawer from '../components/logs/LogDetailsDrawer';
@@ -69,28 +69,7 @@ export default function Dashboard() {
         }, { total: 0, completed: 0, generating: 0, failed: 0 });
         setStats(counts);
 
-        // Aggregate data for the chart (last 15 days)
-        const cutoffDate = startOfDay(subDays(new Date(), 14));
-        const chartAgg = {};
-
-        // Initialize last 15 days to 0
-        for (let i = 14; i >= 0; i--) {
-          const d = startOfDay(subDays(new Date(), i));
-          const dateStr = format(d, 'MMM dd');
-          chartAgg[dateStr] = { date: dateStr, completed: 0, failed: 0 };
-        }
-
-        data.forEach(log => {
-          const logDate = new Date(log.created_at);
-          if (isAfter(logDate, cutoffDate) || logDate.getTime() === cutoffDate.getTime()) {
-             const dateStr = format(logDate, 'MMM dd');
-             if (chartAgg[dateStr]) {
-                if (log.status === 'completed') chartAgg[dateStr].completed++;
-                if (log.status === 'failed') chartAgg[dateStr].failed++;
-             }
-          }
-        });
-        setChartData(Object.values(chartAgg));
+        setChartData(data);
       }
     } catch (err) {
       console.error('Unexpected error fetching dashboard data:', err);
@@ -156,7 +135,7 @@ export default function Dashboard() {
 
       <div className="mb-8">
         <Suspense fallback={<div className="h-80 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-center text-slate-500 animate-pulse">Loading Chart Data...</div>}>
-          <DashboardChart data={chartData} />
+          <DashboardChart rawData={chartData} />
         </Suspense>
       </div>
 
