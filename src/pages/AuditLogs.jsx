@@ -13,6 +13,8 @@ export default function AuditLogs() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedLog, setSelectedLog] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   useEffect(() => {
     fetchLogs();
@@ -47,7 +49,12 @@ export default function AuditLogs() {
         supabase.removeChannel(channel);
       }
     };
-  }, [statusFilter]);
+  }, []);
+
+  // Reset page when search or filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter]);
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -56,10 +63,6 @@ export default function AuditLogs() {
         .from('roundups_audit_logs')
         .select('*')
         .order('created_at', { ascending: false });
-
-      if (statusFilter !== 'all') {
-        query = query.eq('status', statusFilter);
-      }
 
       const { data, error } = await query;
       if (error) {
@@ -74,10 +77,17 @@ export default function AuditLogs() {
     }
   };
 
-  const filteredLogs = logs.filter(log => 
-    log.campaign_id.toLowerCase().includes(search.toLowerCase()) ||
-    log.roundups_job_id?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredLogs = logs.filter(log => {
+    const matchesSearch = log.campaign_id.toLowerCase().includes(search.toLowerCase()) ||
+                          log.roundups_job_id?.toLowerCase().includes(search.toLowerCase());
+    const matchesStatus = statusFilter === 'all' || log.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  // Pagination logic
+  const totalPages = Math.ceil(filteredLogs.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedLogs = filteredLogs.slice(startIndex, startIndex + itemsPerPage);
 
   const getStatusIcon = (status) => {
     switch (status) {
@@ -115,7 +125,7 @@ export default function AuditLogs() {
           />
         </div>
         <div className="flex gap-2">
-          {['all', 'completed', 'generating', 'failed'].map((status) => (
+          {['all', 'completed', 'processing', 'failed'].map((status) => (
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
@@ -150,7 +160,7 @@ export default function AuditLogs() {
                     <td colSpan="5" className="px-6 py-4 bg-slate-800/10 h-16"></td>
                   </tr>
                 ))
-              ) : filteredLogs.map((log) => {
+              ) : paginatedLogs.map((log) => {
                 const status = getStatusIcon(log.status);
                 return (
                   <tr key={log.id} className="hover:bg-slate-800/30 transition-colors group">
@@ -196,12 +206,12 @@ export default function AuditLogs() {
                   </tr>
                 );
               })}
-              {!loading && filteredLogs.length === 0 && (
+              {!loading && paginatedLogs.length === 0 && (
                 <tr>
                   <td colSpan="5" className="px-6 py-12 text-center text-slate-500">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <SafeIcon icon={FiIcons.FiInbox} className="text-4xl text-slate-700 mb-2" />
-                      <p className="text-sm">No automation jobs found. Start a new campaign to see telemetry here.</p>
+                      <p className="text-sm">{search || statusFilter !== 'all' ? 'No logs found matching your criteria.' : 'No automation jobs found. Start a new campaign to see telemetry here.'}</p>
                     </div>
                   </td>
                 </tr>
@@ -210,6 +220,34 @@ export default function AuditLogs() {
           </table>
         </div>
       </div>
+
+      {/* Pagination Controls */}
+      {!loading && filteredLogs.length > 0 && (
+        <div className="flex items-center justify-between text-sm text-slate-400">
+          <div>
+            Showing {startIndex + 1} to {Math.min(startIndex + itemsPerPage, filteredLogs.length)} of {filteredLogs.length} logs
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors text-slate-200 font-medium"
+            >
+              Previous
+            </button>
+            <span className="px-3 py-1.5 bg-slate-900 rounded-lg text-slate-300">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors text-slate-200 font-medium"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       <LogDetailsDrawer 
         log={selectedLog} 
