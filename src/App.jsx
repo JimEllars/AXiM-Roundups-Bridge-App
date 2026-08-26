@@ -7,10 +7,13 @@ import Dashboard from './pages/Dashboard';
 import AuditLogs from './pages/AuditLogs';
 import Settings from './pages/Settings';
 import { Toaster } from 'react-hot-toast';
+import ErrorBoundary from './components/common/ErrorBoundary';
+
 
 function App() {
   return (
-    <Router>
+    <ErrorBoundary>
+      <Router>
       <Toaster position="top-right" toastOptions={{ style: { zIndex: 99999 } }} />
       <Routes>
         {/* Auth Route */}
@@ -45,6 +48,7 @@ function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>
+    </ErrorBoundary>
   );
 }
 

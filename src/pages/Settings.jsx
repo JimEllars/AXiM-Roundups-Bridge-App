@@ -5,29 +5,56 @@ import SafeIcon from '../components/common/SafeIcon';
 const { FiKey, FiServer, FiShield, FiBell, FiChevronRight, FiCpu } = FiIcons;
 
 export default function Settings() {
+  const envStatus = {
+    edgeWorkerUrl: !!import.meta.env.VITE_EDGE_WORKER_URL,
+    edgeApiSecret: !!import.meta.env.VITE_EDGE_API_SECRET,
+    supabaseUrl: !!import.meta.env.VITE_SUPABASE_URL,
+    supabaseKey: !!import.meta.env.VITE_SUPABASE_ANON_KEY,
+  };
+
   const sections = [
     {
       title: 'API Configuration',
       icon: FiKey,
       items: [
-        { label: 'Roundups.AI API Key', value: '••••••••••••••••', status: 'Active' },
-        { label: 'Temporal Cloud Namespace', value: 'axim-bridge.temporal.cloud', status: 'Connected' }
+        {
+          label: 'Edge Worker API Secret',
+          value: envStatus.edgeApiSecret ? '••••••••••••••••' : 'Not Configured',
+          status: envStatus.edgeApiSecret ? 'Active' : 'Missing',
+          active: envStatus.edgeApiSecret
+        },
+        {
+          label: 'Supabase Anon Key',
+          value: envStatus.supabaseKey ? '••••••••••••••••' : 'Not Configured',
+          status: envStatus.supabaseKey ? 'Active' : 'Missing',
+          active: envStatus.supabaseKey
+        }
       ]
     },
     {
       title: 'Infrastructure',
       icon: FiServer,
       items: [
-        { label: 'Supabase Project', value: 'axim-bridge-db-01', status: 'Healthy' },
-        { label: 'Edge Worker Location', value: 'us-east-1 (N. Virginia)', status: 'Active' }
+        {
+          label: 'Supabase Project URL',
+          value: envStatus.supabaseUrl ? 'Configured' : 'Not Configured',
+          status: envStatus.supabaseUrl ? 'Healthy' : 'Error',
+          active: envStatus.supabaseUrl
+        },
+        {
+          label: 'Edge Worker URL',
+          value: envStatus.edgeWorkerUrl ? 'Configured' : 'Not Configured',
+          status: envStatus.edgeWorkerUrl ? 'Healthy' : 'Error',
+          active: envStatus.edgeWorkerUrl
+        }
       ]
     },
     {
       title: 'Workflow Policies',
       icon: FiCpu,
       items: [
-        { label: 'Polling Interval', value: '45 Seconds', status: 'Default' },
-        { label: 'Max Retry Attempts', value: '10 Attempts', status: 'Native' }
+        { label: 'Polling Interval', value: '45 Seconds', status: 'Default', active: true },
+        { label: 'Max Retry Attempts', value: '10 Attempts', status: 'Native', active: true }
       ]
     }
   ];
@@ -56,7 +83,7 @@ export default function Settings() {
                     <div className="text-xs text-slate-500 font-mono mt-1">{item.value}</div>
                   </div>
                   <div className="flex items-center gap-4">
-                    <span className="text-xs px-2 py-1 rounded-full bg-emerald-400/10 text-emerald-400 font-medium">
+                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${item.active ? 'bg-emerald-400/10 text-emerald-400' : 'bg-red-400/10 text-red-400'}`}>
                       {item.status}
                     </span>
                     <button className="text-slate-600 hover:text-white transition-colors">

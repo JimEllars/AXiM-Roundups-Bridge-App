@@ -23,16 +23,21 @@ export default function DashboardLayout({ children }) {
 
   return (
     <div className="min-h-screen bg-[#0f172a] text-slate-200 flex">
-      {/* Sidebar */}
+       {/* Sidebar */}
       <aside className="w-64 border-r border-slate-800 flex flex-col">
         <div className="p-6 flex items-center gap-3">
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
             <SafeIcon icon={FiBox} className="text-white" />
           </div>
-          <span className="text-xl font-bold bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">
-            AXiM Bridge
-          </span>
-        </div>
+          <div className="flex flex-col">
+            <span className="text-xl font-bold tracking-wider bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-transparent">
+              AXiM Systems
+            </span>
+            <span className="text-[0.65rem] uppercase tracking-widest text-slate-500 font-semibold mt-0.5">
+              Data Infrastructure
+            </span>
+          </div>
+          </div>
 
         <nav className="flex-1 px-4 py-4 space-y-2">
           {menuItems.map((item) => (
