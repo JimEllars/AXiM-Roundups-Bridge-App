@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import * as FiIcons from 'react-icons/fi';
+import toast from 'react-hot-toast';
 import SafeIcon from '../components/common/SafeIcon';
 
 const { FiMail, FiLock, FiArrowRight } = FiIcons;
@@ -10,18 +11,18 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setError(null);
+
 
     const { error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
-      setError(error.message);
+      toast.error(error.message);
       setLoading(false);
     } else {
       navigate('/');
@@ -40,11 +41,7 @@ export default function Login() {
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4">
-          {error && (
-            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">
-              {error}
-            </div>
-          )}
+
 
           <div className="space-y-1">
             <label className="text-sm font-medium text-slate-300 ml-1">Email Address</label>
@@ -81,7 +78,7 @@ export default function Login() {
             disabled={loading}
             className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 group disabled:opacity-50"
           >
-            {loading ? 'Signing in...' : 'Sign In'}
+            {loading ? <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></div> : 'Sign In'}
             {!loading && <SafeIcon icon={FiArrowRight} className="group-hover:translate-x-1 transition-transform" />}
           </button>
         </form>
