@@ -1,3 +1,4 @@
+import { format } from 'date-fns';
 import * as FiIcons from 'react-icons/fi';
 import SafeIcon from '../components/common/SafeIcon';
 import { supabase } from '../lib/supabase';
@@ -5,6 +6,11 @@ import { supabase } from '../lib/supabase';
 import React, { useEffect, useState, Suspense, lazy } from 'react';
 import NewCampaignModal from '../components/dashboard/NewCampaignModal';
 import LogDetailsDrawer from '../components/logs/LogDetailsDrawer';
+
+import EditCampaignModal from '../components/dashboard/EditCampaignModal';
+import CampaignActionMenu from '../components/dashboard/CampaignActionMenu';
+import toast from 'react-hot-toast';
+
 
 const { FiTrendingUp, FiCheckCircle, FiClock, FiAlertCircle, FiPlus, FiWifi, FiRefreshCw } = FiIcons;
 
@@ -18,6 +24,8 @@ export default function Dashboard() {
   const [isLive, setIsLive] = useState(false);
   const [selectedLog, setSelectedLog] = useState(null);
   const [chartData, setChartData] = useState([]);
+  const [campaigns, setCampaigns] = useState([]);
+  const [editingCampaign, setEditingCampaign] = useState(null);
 
   useEffect(() => {
     fetchDashboardData();
@@ -51,16 +59,16 @@ export default function Dashboard() {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('roundups_audit_logs')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const [logsResponse, campaignsResponse] = await Promise.all([
+        supabase.from('roundups_audit_logs').select('*').order('created_at', { ascending: false }),
+        supabase.from('affiliate_campaigns').select('*').order('created_at', { ascending: false })
+      ]);
 
-      if (error) {
-        console.error('Error fetching dashboard data:', error);
-      } else if (data) {
-        setRecentLogs(data.slice(0, 8));
-        const counts = data.reduce((acc, log) => {
+      if (logsResponse.error) {
+        console.error('Error fetching dashboard data:', logsResponse.error);
+      } else if (logsResponse.data) {
+        setRecentLogs(logsResponse.data.slice(0, 8));
+        const counts = logsResponse.data.reduce((acc, log) => {
           acc.total++;
           if (acc[log.status] !== undefined) {
             acc[log.status]++;
@@ -69,12 +77,69 @@ export default function Dashboard() {
         }, { total: 0, completed: 0, generating: 0, failed: 0 });
         setStats(counts);
 
-        setChartData(data);
+        setChartData(logsResponse.data);
       }
+
+      if (campaignsResponse.error) {
+        console.error('Error fetching campaigns:', campaignsResponse.error);
+      } else if (campaignsResponse.data) {
+        setCampaigns(campaignsResponse.data);
+      }
+
     } catch (err) {
       console.error('Unexpected error fetching dashboard data:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+const handleToggleStatus = async (campaign) => {
+    const newStatus = campaign.campaign_status === 'paused' ? 'active' : 'paused';
+
+    // Optimistic UI update
+    setCampaigns(prev => prev.map(c =>
+      c.id === campaign.id ? { ...c, campaign_status: newStatus } : c
+    ));
+
+    try {
+      const { error } = await supabase
+        .from('affiliate_campaigns')
+        .update({ campaign_status: newStatus })
+        .eq('id', campaign.id);
+
+      if (error) throw error;
+      toast.success(`Campaign ${newStatus === 'active' ? 'resumed' : 'paused'}`);
+    } catch (err) {
+      // Revert on error
+      setCampaigns(prev => prev.map(c =>
+        c.id === campaign.id ? { ...c, campaign_status: campaign.campaign_status } : c
+      ));
+      toast.error('Failed to update campaign status');
+      console.error(err);
+    }
+  };
+
+  const handleDeleteCampaign = async (campaign) => {
+    if (!window.confirm(`Are you sure you want to delete campaign ${campaign.campaign_id}? This action cannot be undone.`)) {
+      return;
+    }
+
+    // Optimistic UI update
+    setCampaigns(prev => prev.filter(c => c.id !== campaign.id));
+
+    try {
+      const { error } = await supabase
+        .from('affiliate_campaigns')
+        .delete()
+        .eq('id', campaign.id);
+
+      if (error) throw error;
+      toast.success('Campaign deleted');
+    } catch (err) {
+      // Refresh to restore state on error
+      fetchDashboardData();
+      toast.error('Failed to delete campaign');
+      console.error(err);
     }
   };
 
@@ -139,12 +204,74 @@ export default function Dashboard() {
         </Suspense>
       </div>
 
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex flex-col">
-          <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-slate-950/30">
-            <h3 className="text-lg font-semibold text-white">Recent Activity</h3>
-            <a href="/logs" className="text-sm text-blue-400 hover:text-blue-300 font-medium">View All Logs</a>
+        <div className="lg:col-span-2 space-y-8">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex flex-col">
+            <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-slate-950/30">
+              <h3 className="text-lg font-semibold text-white">Active Campaigns</h3>
+            </div>
+            <div className="overflow-x-auto flex-1">
+              <table className="w-full text-left">
+                <thead className="bg-slate-950/50 text-slate-400 text-[10px] uppercase tracking-widest">
+                  <tr>
+                    <th className="px-6 py-4 font-bold">Campaign ID</th>
+                    <th className="px-6 py-4 font-bold">Status</th>
+                    <th className="px-6 py-4 font-bold">Schedule</th>
+                    <th className="px-6 py-4 font-bold text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {campaigns.map((campaign) => (
+                    <tr key={campaign.id} className="hover:bg-slate-800/30 transition-colors group">
+                      <td className="px-6 py-4">
+                        <span className="font-medium text-slate-200">{campaign.campaign_id}</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-tighter ${
+                          campaign.campaign_status === 'paused'
+                            ? 'bg-amber-400/10 text-amber-400 border border-amber-400/20'
+                            : 'bg-emerald-400/10 text-emerald-400 border border-emerald-400/20'
+                        }`}>
+                          {campaign.campaign_status || 'active'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-xs text-slate-500 font-medium">
+                        {campaign.cron_schedule || 'None'}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                          <CampaignActionMenu
+                            campaign={campaign}
+                            onEdit={() => setEditingCampaign(campaign)}
+                            onToggleStatus={() => handleToggleStatus(campaign)}
+                            onDelete={() => handleDeleteCampaign(campaign)}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {!loading && campaigns.length === 0 && (
+                    <tr>
+                      <td colSpan="4" className="px-6 py-12 text-center text-slate-500">
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <SafeIcon icon={FiIcons.FiInbox} className="text-4xl text-slate-700 mb-2" />
+                          <p className="text-sm">No campaigns found. Create one to get started.</p>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
+
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex flex-col">
+            <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-slate-950/30">
+              <h3 className="text-lg font-semibold text-white">Recent Activity</h3>
+              <a href="/logs" className="text-sm text-blue-400 hover:text-blue-300 font-medium">View All Logs</a>
+            </div>
+
           <div className="overflow-x-auto flex-1">
             <table className="w-full text-left">
               <thead className="bg-slate-950/50 text-slate-400 text-[10px] uppercase tracking-widest">
@@ -207,6 +334,7 @@ export default function Dashboard() {
             </table>
           </div>
         </div>
+        </div>
 
         <div className="space-y-6">
           <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl p-6 text-white shadow-xl shadow-blue-600/10 relative overflow-hidden">
@@ -246,11 +374,20 @@ export default function Dashboard() {
         </div>
       </div>
 
+
       <NewCampaignModal 
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
         onRefresh={fetchDashboardData}
       />
+
+      <EditCampaignModal
+        isOpen={!!editingCampaign}
+        campaign={editingCampaign}
+        onClose={() => setEditingCampaign(null)}
+        onRefresh={fetchDashboardData}
+      />
+
 
       <LogDetailsDrawer
         log={selectedLog}
