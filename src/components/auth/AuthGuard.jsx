@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import SafeIcon from '../common/SafeIcon';
+import toast from 'react-hot-toast';
 
 export default function AuthGuard({ children }) {
   const [loading, setLoading] = useState(true);
@@ -26,8 +27,12 @@ export default function AuthGuard({ children }) {
 
     checkAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
+
+      if (event === 'TOKEN_REFRESH_FAILED') {
+        toast.error('Session expired. Please log in again.');
+      }
 
       if (!session) {
         setAuthenticated(false);

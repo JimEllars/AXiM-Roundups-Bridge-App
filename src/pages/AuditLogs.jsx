@@ -65,8 +65,14 @@ export default function AuditLogs() {
         .order('created_at', { ascending: false });
 
       const { data, error } = await query;
+      const isUnauthorized = (err) => err && (err.code === '401' || err.code === '403' || err.code === 'PGRST301' || err.message?.toLowerCase().includes('jwt'));
+
       if (error) {
-        console.error('Error fetching logs:', error);
+        if (isUnauthorized(error)) {
+          setLogs([]);
+        } else {
+          console.error('Error fetching logs:', error);
+        }
       } else if (data) {
         setLogs(data);
       }
