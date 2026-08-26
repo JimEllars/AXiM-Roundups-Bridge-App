@@ -64,8 +64,16 @@ export default function Dashboard() {
         supabase.from('affiliate_campaigns').select('*').order('created_at', { ascending: false })
       ]);
 
+      const isUnauthorized = (err) => err && (err.code === '401' || err.code === '403' || err.code === 'PGRST301' || err.message?.toLowerCase().includes('jwt'));
+
       if (logsResponse.error) {
-        console.error('Error fetching dashboard data:', logsResponse.error);
+        if (isUnauthorized(logsResponse.error)) {
+          setRecentLogs([]);
+          setStats({ total: 0, completed: 0, generating: 0, failed: 0 });
+          setChartData([]);
+        } else {
+          console.error('Error fetching dashboard data:', logsResponse.error);
+        }
       } else if (logsResponse.data) {
         setRecentLogs(logsResponse.data.slice(0, 8));
         const counts = logsResponse.data.reduce((acc, log) => {
@@ -81,7 +89,11 @@ export default function Dashboard() {
       }
 
       if (campaignsResponse.error) {
-        console.error('Error fetching campaigns:', campaignsResponse.error);
+        if (isUnauthorized(campaignsResponse.error)) {
+          setCampaigns([]);
+        } else {
+          console.error('Error fetching campaigns:', campaignsResponse.error);
+        }
       } else if (campaignsResponse.data) {
         setCampaigns(campaignsResponse.data);
       }
