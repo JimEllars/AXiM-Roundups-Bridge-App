@@ -69,9 +69,10 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - name: Deployment Placeholder
+      - name: Trigger Cloud Deployment Webhook
         run: |
-          echo "Placeholder for deployment step."
-          echo "In the future, we can add an SSH step or webhook to trigger deployment."
-          # Example SSH deployment:
-          # ssh user@host "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_WORKER }}:latest && docker-compose up -d"
+          echo "Triggering cloud host deployment..."
+          curl -X POST -f -s -S \
+            -H "Content-Type: application/json" \
+            "${{ secrets.DEPLOY_WEBHOOK_URL }}" \
+            -d '{"event":"deploy","services":["temporal-worker","temporal-rest-gateway"]}'
