@@ -1,5 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import dotenv from 'dotenv';
+import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import { Connection, Client } from '@temporalio/client';
 
 dotenv.config();
@@ -7,7 +9,18 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
+// CORS Configuration - restrict to Cloudflare Edge Worker origins
+const allowedOrigin = process.env.ALLOWED_ORIGIN || 'https://axim-roundups-bridge.pages.dev';
+app.use(cors({
+  origin: allowedOrigin
+}));
+
 const PORT = process.env.PORT || 3001;
+
+// Health Check Endpoint
+app.get('/health', (req: Request, res: Response) => {
+  res.status(200).json({ status: 'healthy', timestamp: Date.now() });
+});
 
 // Authentication Middleware
 const authenticate = (req: Request, res: Response, next: NextFunction) => {
@@ -62,7 +75,16 @@ async function getTemporalClient() {
   return temporalClient;
 }
 
-app.post('/api/workflows/start', authenticate, async (req: Request, res: Response) => {
+// Rate Limiter
+const startWorkflowLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 60, // Limit each IP to 60 requests per `window` (here, per 1 minute)
+  message: { error: 'Too many requests, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.post('/api/workflows/start', startWorkflowLimiter, authenticate, async (req: Request, res: Response) => {
   try {
     const { campaign_id, roundups_job_id } = req.body;
 
