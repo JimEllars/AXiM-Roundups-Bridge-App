@@ -12,7 +12,7 @@ export default function DashboardLayout({ children }) {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    navigate('/login');
+    navigate('/login', { replace: true });
   };
 
   const menuItems = [
@@ -62,7 +62,7 @@ export default function DashboardLayout({ children }) {
             className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-xl transition-all duration-200"
           >
             <SafeIcon icon={FiLogOut} />
-            <span className="font-medium">Logout</span>
+            <span className="font-medium">Sign Out</span>
           </button>
         </div>
       </aside>
