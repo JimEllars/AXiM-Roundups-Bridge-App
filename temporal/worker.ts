@@ -1,5 +1,5 @@
 import { Worker, NativeConnection } from '@temporalio/worker';
-import * as activities from './activities.js';
+import * as activities from './activities.js'; // All exports (including dispatchFailureAlert) are automatically registered
 import * as dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import * as path from 'path';
