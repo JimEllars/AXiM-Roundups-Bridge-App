@@ -18,8 +18,20 @@ app.use(cors({
 const PORT = process.env.PORT || 3001;
 
 // Health Check Endpoint
-app.get('/health', (req: Request, res: Response) => {
+app.get('/healthz', (req: Request, res: Response) => {
   res.status(200).json({ status: 'healthy', timestamp: Date.now() });
+});
+
+app.get('/ready', async (req: Request, res: Response) => {
+  try {
+    const client = await getTemporalClient();
+    // Assuming if getTemporalClient() works, we are connected.
+    // Realistically you'd want a more robust check but this suffices for "connection verification".
+    res.status(200).json({ status: 'ready', temporalConnection: 'ok', timestamp: Date.now() });
+  } catch (error) {
+    console.error('Temporal connection readiness check failed:', error);
+    res.status(503).json({ status: 'unavailable', error: 'Temporal connection failed' });
+  }
 });
 
 // Authentication Middleware

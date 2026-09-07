@@ -31,12 +31,23 @@ export default function AuthGuard({ children }) {
       if (!mounted) return;
 
       if (event === 'TOKEN_REFRESH_FAILED') {
-        toast.error('Session expired. Please log in again.');
-      }
-
-      if (!session) {
+        // Attempt a graceful fallback refresh instead of immediately unmounting/logging out
+        supabase.auth.getSession().then(({ data }) => {
+           if (data.session) {
+              setAuthenticated(true);
+           } else {
+              toast.error('Session expired. Please log in again.');
+              setAuthenticated(false);
+              navigate('/login', { replace: true, state: { from: location } });
+           }
+        }).catch(() => {
+           toast.error('Session expired. Please log in again.');
+           setAuthenticated(false);
+           navigate('/login', { replace: true, state: { from: location } });
+        });
+      } else if (!session) {
         setAuthenticated(false);
-        navigate('/login', { replace: true });
+        navigate('/login', { replace: true, state: { from: location } });
       } else {
         setAuthenticated(true);
       }

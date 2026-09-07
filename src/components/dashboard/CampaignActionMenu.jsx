@@ -5,6 +5,7 @@ import SafeIcon from '../common/SafeIcon';
 const { FiMoreVertical, FiEdit2, FiPauseCircle, FiPlayCircle, FiTrash2 } = FiIcons;
 
 export default function CampaignActionMenu({ campaign, onEdit, onToggleStatus, onDelete }) {
+  const [isProcessing, setIsProcessing] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
 
@@ -19,9 +20,14 @@ export default function CampaignActionMenu({ campaign, onEdit, onToggleStatus, o
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleAction = (action) => {
+  const handleAction = async (action) => {
     setIsOpen(false);
-    action();
+    setIsProcessing(true);
+    try {
+      await action();
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const isPaused = campaign.campaign_status === 'paused';
@@ -30,9 +36,10 @@ export default function CampaignActionMenu({ campaign, onEdit, onToggleStatus, o
     <div className="relative" ref={menuRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+        disabled={isProcessing}
+        className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors disabled:opacity-50"
       >
-        <SafeIcon icon={FiMoreVertical} />
+        {isProcessing ? <div className="w-4 h-4 border-2 border-slate-600 border-t-slate-400 rounded-full animate-spin"></div> : <SafeIcon icon={FiMoreVertical} />}
       </button>
 
       {isOpen && (

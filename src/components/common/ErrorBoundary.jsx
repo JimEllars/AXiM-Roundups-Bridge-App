@@ -19,7 +19,7 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-[#0f172a] text-slate-200 flex flex-col items-center justify-center p-4">
+        <div className="bg-transparent text-slate-200 flex flex-col items-center justify-center p-4 w-full h-full min-h-[300px]">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-md w-full text-center space-y-6">
             <div className="flex justify-center">
               <div className="p-4 bg-red-500/10 rounded-2xl">
@@ -39,7 +39,7 @@ class ErrorBoundary extends React.Component {
               className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-xl transition-all"
             >
               <SafeIcon icon={FiRefreshCw} />
-              Reload Application
+              Reload Section
             </button>
           </div>
         </div>

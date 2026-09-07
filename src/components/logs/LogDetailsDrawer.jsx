@@ -9,12 +9,12 @@ export default function LogDetailsDrawer({ log, isOpen, onClose }) {
   const [copied, setCopied] = React.useState(false);
 
   const parseErrorDetails = (details) => {
-    if (!details) return null;
+    if (!details) return 'No error details provided';
     try {
-      const parsed = JSON.parse(details);
+      const parsed = typeof details === 'string' ? JSON.parse(details) : details;
       return JSON.stringify(parsed, null, 2);
     } catch (e) {
-      return details;
+      return typeof details === 'object' ? JSON.stringify(details, null, 2) : String(details);
     }
   };
 
@@ -118,7 +118,7 @@ export default function LogDetailsDrawer({ log, isOpen, onClose }) {
                 </div>
               ) : log.status === 'failed' && log.error_details ? (
                 <div className="bg-red-950/30 border border-red-900/50 rounded-lg p-3 overflow-x-auto">
-                  <pre className="text-xs text-red-400 font-mono whitespace-pre-wrap">
+                  <pre className="text-xs text-red-400 font-mono whitespace-pre-wrap break-all">
                     {parseErrorDetails(log.error_details)}
                   </pre>
                 </div>
