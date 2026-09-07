@@ -20,6 +20,10 @@ For the current build-and-push pipeline to execute successfully, ensure the foll
 ### Secrets
 Currently, the pipeline leverages the automatically provided `GITHUB_TOKEN` to authenticate with GHCR.
 
+**Environment Variables:**
+Ensure the backend environment (where the Temporal Worker runs) contains the following variables:
+*   `ALBATO_WEBHOOK_URL`: Webhook URL for the external automation layer (Albato) to route failure alerts.
+
 **Future Deployment Phase:**
 When the deployment step placeholder is replaced with actual deployment logic (e.g., SSH to a target server), you will need to add corresponding secrets. Common examples include:
 *   `DEPLOY_SSH_KEY`: The private SSH key for the target server.

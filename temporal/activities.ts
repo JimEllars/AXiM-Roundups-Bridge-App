@@ -89,3 +89,34 @@ export async function finalizeRoundupLog(campaignId: string, roundupsJobId: stri
     }
   }
 }
+
+
+/**
+ * Dispatches a failure alert to external automation routing.
+ */
+export async function dispatchFailureAlert(campaignId: string, roundupsJobId: string, errorDetails: string): Promise<void> {
+  const webhookUrl = process.env.ALBATO_WEBHOOK_URL;
+  if (!webhookUrl) {
+    console.warn('ALBATO_WEBHOOK_URL is not set. Skipping failure alert dispatch.');
+    return;
+  }
+
+  const payload = {
+    campaignId,
+    roundupsJobId,
+    timestamp: new Date().toISOString(),
+    errorDetails,
+  };
+
+  const response = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to dispatch alert to Albato: ${response.status} ${response.statusText}`);
+  }
+}

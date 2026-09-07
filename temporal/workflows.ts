@@ -3,7 +3,7 @@ import type * as activities from './activities.js';
 
 // Configure proxy activities with native exponential backoff and retry policies
 // This ensures that unexpected API downtime (e.g., 502 Bad Gateway) is handled safely.
-const { checkRoundupStatus, finalizeRoundupLog } = proxyActivities<typeof activities>({
+const { checkRoundupStatus, finalizeRoundupLog, dispatchFailureAlert } = proxyActivities<typeof activities>({
   startToCloseTimeout: '1 minute',
   retry: {
     initialInterval: '15s',
@@ -27,6 +27,15 @@ export async function RoundupGenerationWorkflow(campaignId: string, roundupsJobI
       // 3. Database Resolution & Error Handling
       await finalizeRoundupLog(campaignId, roundupsJobId, status);
       
+      if (status.state === 'timeout' || status.state === 'error') {
+        try {
+          const errorDetails = status.errors ? JSON.stringify(status.errors) : `Job failed with state: ${status.state}`;
+          await dispatchFailureAlert(campaignId, roundupsJobId, errorDetails);
+        } catch (e) {
+          // Graceful failure for the alert
+          console.warn('Failed to dispatch failure alert:', e);
+        }
+      }
       break;
     }
 
