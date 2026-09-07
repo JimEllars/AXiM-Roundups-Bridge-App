@@ -1,0 +1,2 @@
+# Webhook validation secret for HMAC SHA-256 validation on the edge worker
+WEBHOOK_SECRET=your_webhook_secret_here

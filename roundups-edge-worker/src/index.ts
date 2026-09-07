@@ -1,6 +1,9 @@
 import { buildPayload } from "./payloadBuilder.js";
 
+const idempotencyCache = new Set<string>();
+
 export interface Env {
+  WEBHOOK_SECRET?: string;
   TEMPORAL_REST_URL: string;
   TEMPORAL_API_KEY: string;
   ALLOWED_ORIGIN?: string;
@@ -41,35 +44,100 @@ function response(
   });
 }
 
+async function verifySignature(secret: string, signatureHex: string, payload: string) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
+  const hex = Array.from(new Uint8Array(signature))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return hex === signatureHex;
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const startTime = Date.now();
+    const requestId = crypto.randomUUID();
+    const origin = request.headers.get("Origin") || "unknown";
+
+    const logTelemetry = (status: number, extra: any = {}) => {
+      const duration = Date.now() - startTime;
+      console.log(JSON.stringify({
+        requestId,
+        timestamp: new Date().toISOString(),
+        origin,
+        durationMs: duration,
+        status,
+        ...extra,
+      }));
+    };
+
+    const _originalResponse = response;
+    const responseWithLog = (body: string, status: number, req: Request, e: Env, contentType = "text/plain") => {
+      logTelemetry(status);
+      return _originalResponse(body, status, req, e, contentType);
+    };
     const url = new URL(request.url);
 
     if (request.method === "OPTIONS") {
       if (request.headers.get("Origin") !== env.ALLOWED_ORIGIN) {
-        return response("Forbidden", 403, request, env);
+        return responseWithLog("Forbidden", 403, request, env);
       }
 
-      return response("", 204, request, env);
+      return responseWithLog("", 204, request, env);
     }
 
     if (request.method !== "POST" || url.pathname !== "/api/v1/roundups/trigger") {
-      return response("Not Found", 404, request, env);
+      return responseWithLog("Not Found", 404, request, env);
     }
 
     if (request.headers.get("Authorization") !== `Bearer ${env.API_SECRET}`) {
-      return response("Unauthorized", 401, request, env);
+      return responseWithLog("Unauthorized", 401, request, env);
+    }
+
+    const idempotencyKey = request.headers.get("x-idempotency-key");
+    if (idempotencyKey) {
+      if (idempotencyCache.has(idempotencyKey)) {
+         return responseWithLog("Conflict: Duplicate request", 409, request, env);
+      }
+      idempotencyCache.add(idempotencyKey);
+      // Basic cleanup for memory leak in cache (in a real edge worker, this is per-isolate)
+      if (idempotencyCache.size > 1000) {
+         const first = idempotencyCache.values().next().value;
+         if (first) idempotencyCache.delete(first);
+      }
+    }
+
+    const clonedRequest = request.clone();
+    let rawBody = "";
+    try {
+      rawBody = await clonedRequest.text();
+    } catch {
+      return responseWithLog("Bad Request: Could not read body", 400, request, env);
+    }
+
+    if (env.WEBHOOK_SECRET) {
+      const signatureHex = request.headers.get("X-Signature-256");
+      if (!signatureHex || !(await verifySignature(env.WEBHOOK_SECRET, signatureHex, rawBody))) {
+        return responseWithLog("Unauthorized: Invalid signature", 401, request, env);
+      }
     }
 
     let payload: { campaign_id?: string; keywords?: string };
     try {
-      payload = await request.json();
+      payload = JSON.parse(rawBody);
     } catch {
-      return response("Bad Request: Invalid JSON", 400, request, env);
+      return responseWithLog("Bad Request: Invalid JSON", 400, request, env);
     }
 
     if (!payload.campaign_id) {
-      return response("Bad Request: Missing campaign_id", 400, request, env);
+      return responseWithLog("Bad Request: Missing campaign_id", 400, request, env);
     }
 
     const campaignUrl = new URL("/rest/v1/campaigns", env.SUPABASE_URL);
@@ -84,13 +152,13 @@ export default {
     });
 
     if (!campaignResponse.ok) {
-      return response("Internal Server Error: Failed to fetch campaign", 500, request, env);
+      return responseWithLog("Internal Server Error: Failed to fetch campaign", 500, request, env);
     }
 
     const campaigns = await campaignResponse.json() as Array<Record<string, unknown>>;
     const campaign = campaigns[0];
     if (!campaign) {
-      return response("Not Found: Campaign not found", 404, request, env);
+      return responseWithLog("Not Found: Campaign not found", 404, request, env);
     }
 
     const roundupsResponse = await fetch(env.ROUNDUPS_API_URL, {
@@ -109,7 +177,7 @@ export default {
     });
 
     if (roundupsResponse.status !== 202) {
-      return response(
+      return responseWithLog(
         JSON.stringify({ status: "Roundups request failed", external_status: roundupsResponse.status }),
         502,
         request,
@@ -120,7 +188,7 @@ export default {
 
     const roundupsResult = await roundupsResponse.json() as { id?: string };
     if (!roundupsResult.id) {
-      return response("Bad Gateway: Roundups response did not include a job ID", 502, request, env);
+      return responseWithLog("Bad Gateway: Roundups response did not include a job ID", 502, request, env);
     }
 
     const auditLogResponse = await fetch(new URL("/rest/v1/roundups_audit_logs", env.SUPABASE_URL), {
@@ -139,7 +207,7 @@ export default {
     });
 
     if (!auditLogResponse.ok) {
-      return response("Internal Server Error: Failed to write audit log", 500, request, env);
+      return responseWithLog("Internal Server Error: Failed to write audit log", 500, request, env);
     }
 
     ctx.waitUntil((async () => {
@@ -168,7 +236,7 @@ export default {
     })());
 
 
-    return response(
+    return responseWithLog(
       JSON.stringify({ status: "accepted", roundups_job_id: roundupsResult.id }),
       202,
       request,

@@ -38,3 +38,6 @@ The workflow automatically triggers on **pushes to the `main` branch** when chan
 *   `.github/workflows/deploy-temporal.yml`
 
 This ensures that builds are only run when relevant codebase areas are updated.
+
+## Edge Worker Webhook Validation
+The Edge Worker now requires an optional `WEBHOOK_SECRET` environment variable to securely validate HMAC SHA-256 signatures for incoming payload requests. Make sure this is set in your Cloudflare deployment via `wrangler secret put WEBHOOK_SECRET`.
