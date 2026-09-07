@@ -1,4 +1,4 @@
-import { buildPayload } from "./payloadBuilder.js";
+import { buildPayload, validateCampaignPayload } from "./payloadBuilder.js";
 
 const idempotencyCache = new Set<string>();
 
@@ -22,8 +22,8 @@ function corsHeaders(request: Request, env: Env): HeadersInit {
 
   return {
     "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-idempotency-key, x-axim-trace-id",
     Vary: "Origin",
   };
 }
@@ -34,12 +34,14 @@ function response(
   request: Request,
   env: Env,
   contentType = "text/plain",
+  extraHeaders: Record<string, string> = {}
 ): Response {
   return new Response(body, {
     status,
     headers: {
       "Content-Type": contentType,
       ...corsHeaders(request, env),
+      ...extraHeaders
     },
   });
 }
@@ -63,34 +65,52 @@ async function verifySignature(secret: string, signatureHex: string, payload: st
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const startTime = Date.now();
-    const requestId = crypto.randomUUID();
+
+    // Generate or use provided trace ID
+    const providedTraceId = request.headers.get("x-axim-trace-id");
+    const traceId = providedTraceId || crypto.randomUUID();
+
     const origin = request.headers.get("Origin") || "unknown";
 
     const logTelemetry = (status: number, extra: any = {}) => {
       const duration = Date.now() - startTime;
       console.log(JSON.stringify({
-        requestId,
+        trace_id: traceId,
         timestamp: new Date().toISOString(),
+        method: request.method,
+        url: request.url,
         origin,
-        durationMs: duration,
+        duration_ms: duration,
         status,
         ...extra,
       }));
     };
 
     const _originalResponse = response;
-    const responseWithLog = (body: string, status: number, req: Request, e: Env, contentType = "text/plain") => {
-      logTelemetry(status);
-      return _originalResponse(body, status, req, e, contentType);
+    const responseWithLog = (body: string, status: number, req: Request, e: Env, contentType = "text/plain", extraHeaders: Record<string, string> = {}) => {
+      let isError = status >= 400;
+      logTelemetry(status, isError ? { error: body } : {});
+      return _originalResponse(body, status, req, e, contentType, { "x-axim-trace-id": traceId, ...extraHeaders });
     };
+
     const url = new URL(request.url);
 
     if (request.method === "OPTIONS") {
       if (request.headers.get("Origin") !== env.ALLOWED_ORIGIN) {
         return responseWithLog("Forbidden", 403, request, env);
       }
-
       return responseWithLog("", 204, request, env);
+    }
+
+    // Health and Telemetry endpoints
+    if (request.method === "GET" && (url.pathname === "/health" || url.pathname === "/telemetry")) {
+      const healthData = {
+        status: "ok",
+        service: "roundups-edge-worker",
+        timestamp: new Date().toISOString(),
+        environment: typeof env.ALLOWED_ORIGIN === 'string' ? 'production' : 'development'
+      };
+      return responseWithLog(JSON.stringify(healthData), 200, request, env, "application/json");
     }
 
     if (request.method !== "POST" || url.pathname !== "/api/v1/roundups/trigger") {
@@ -104,10 +124,12 @@ export default {
     const idempotencyKey = request.headers.get("x-idempotency-key");
     if (idempotencyKey) {
       if (idempotencyCache.has(idempotencyKey)) {
-         return responseWithLog("Conflict: Duplicate request", 409, request, env);
+         return responseWithLog(
+            JSON.stringify({ error: "Conflict: Duplicate request", trace_id: traceId }),
+            409, request, env, "application/json"
+         );
       }
       idempotencyCache.add(idempotencyKey);
-      // Basic cleanup for memory leak in cache (in a real edge worker, this is per-isolate)
       if (idempotencyCache.size > 1000) {
          const first = idempotencyCache.values().next().value;
          if (first) idempotencyCache.delete(first);
@@ -118,26 +140,39 @@ export default {
     let rawBody = "";
     try {
       rawBody = await clonedRequest.text();
-    } catch {
-      return responseWithLog("Bad Request: Could not read body", 400, request, env);
+    } catch (e: any) {
+      return responseWithLog(
+        JSON.stringify({ error: "Bad Request: Could not read body", message: e?.message, trace_id: traceId }),
+        400, request, env, "application/json"
+      );
     }
 
     if (env.WEBHOOK_SECRET) {
       const signatureHex = request.headers.get("X-Signature-256");
       if (!signatureHex || !(await verifySignature(env.WEBHOOK_SECRET, signatureHex, rawBody))) {
-        return responseWithLog("Unauthorized: Invalid signature", 401, request, env);
+        return responseWithLog(
+           JSON.stringify({ error: "Unauthorized: Invalid signature", trace_id: traceId }),
+           401, request, env, "application/json"
+        );
       }
     }
 
-    let payload: { campaign_id?: string; keywords?: string };
+    let payload: any;
     try {
       payload = JSON.parse(rawBody);
-    } catch {
-      return responseWithLog("Bad Request: Invalid JSON", 400, request, env);
+    } catch (e: any) {
+      return responseWithLog(
+        JSON.stringify({ error: "Bad Request: Invalid JSON", message: e?.message, trace_id: traceId }),
+        400, request, env, "application/json"
+      );
     }
 
-    if (!payload.campaign_id) {
-      return responseWithLog("Bad Request: Missing campaign_id", 400, request, env);
+    const validation = validateCampaignPayload(payload);
+    if (!validation.isValid) {
+      return responseWithLog(
+        JSON.stringify({ error: "Bad Request: Validation Failed", details: validation.error, trace_id: traceId }),
+        400, request, env, "application/json"
+      );
     }
 
     const campaignUrl = new URL("/rest/v1/campaigns", env.SUPABASE_URL);
@@ -152,33 +187,53 @@ export default {
     });
 
     if (!campaignResponse.ok) {
-      return responseWithLog("Internal Server Error: Failed to fetch campaign", 500, request, env);
+      return responseWithLog(
+        JSON.stringify({ error: "Internal Server Error: Failed to fetch campaign", trace_id: traceId }),
+        500, request, env, "application/json"
+      );
     }
 
     const campaigns = await campaignResponse.json() as Array<Record<string, unknown>>;
     const campaign = campaigns[0];
     if (!campaign) {
-      return responseWithLog("Not Found: Campaign not found", 404, request, env);
+      return responseWithLog(
+        JSON.stringify({ error: "Not Found: Campaign not found", trace_id: traceId }),
+        404, request, env, "application/json"
+      );
     }
 
-    const roundupsResponse = await fetch(env.ROUNDUPS_API_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.ROUNDUPS_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(buildPayload({
-        campaign_id: String(campaign.id ?? payload.campaign_id),
-        product_urls: Array.isArray(campaign.product_urls) ? campaign.product_urls.map(String) : undefined,
-        affiliate_url: typeof campaign.affiliate_url === "string" ? campaign.affiliate_url : undefined,
-        keywords: payload.keywords || (typeof campaign.keywords === "string" ? campaign.keywords : undefined),
-        is_software: campaign.is_software === true,
-      })),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => { controller.abort(); }, 10000); // 10s timeout
+    let roundupsResponse: globalThis.Response;
+    try {
+        roundupsResponse = await fetch(env.ROUNDUPS_API_URL, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${env.ROUNDUPS_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(buildPayload({
+            campaign_id: String(campaign.id ?? payload.campaign_id),
+            product_urls: Array.isArray(campaign.product_urls) ? campaign.product_urls.map(String) : undefined,
+            affiliate_url: typeof campaign.affiliate_url === "string" ? campaign.affiliate_url : undefined,
+            keywords: payload.keywords || (typeof campaign.keywords === "string" ? campaign.keywords : undefined),
+            is_software: campaign.is_software === true,
+          })),
+          signal: controller.signal as any
+        });
+    } catch (e: any) {
+        clearTimeout(timeout);
+        return responseWithLog(
+           JSON.stringify({ error: "Bad Gateway: Upstream timeout or network error", message: e?.message, trace_id: traceId }),
+           502, request, env, "application/json", { "Retry-After": "30" }
+        );
+    }
+    clearTimeout(timeout);
+
 
     if (roundupsResponse.status !== 202) {
       return responseWithLog(
-        JSON.stringify({ status: "Roundups request failed", external_status: roundupsResponse.status }),
+        JSON.stringify({ error: "Roundups request failed", external_status: roundupsResponse.status, trace_id: traceId }),
         502,
         request,
         env,
@@ -188,7 +243,10 @@ export default {
 
     const roundupsResult = await roundupsResponse.json() as { id?: string };
     if (!roundupsResult.id) {
-      return responseWithLog("Bad Gateway: Roundups response did not include a job ID", 502, request, env);
+      return responseWithLog(
+        JSON.stringify({ error: "Bad Gateway: Roundups response did not include a job ID", trace_id: traceId }),
+        502, request, env, "application/json"
+      );
     }
 
     const auditLogResponse = await fetch(new URL("/rest/v1/roundups_audit_logs", env.SUPABASE_URL), {
@@ -207,7 +265,10 @@ export default {
     });
 
     if (!auditLogResponse.ok) {
-      return responseWithLog("Internal Server Error: Failed to write audit log", 500, request, env);
+      return responseWithLog(
+        JSON.stringify({ error: "Internal Server Error: Failed to write audit log", trace_id: traceId }),
+        500, request, env, "application/json"
+      );
     }
 
     ctx.waitUntil((async () => {
@@ -219,25 +280,34 @@ export default {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-             // Example mapping to the temporal rest endpoint assuming campaign_id and roundups_job_id are arguments
              campaign_id: payload.campaign_id,
              roundups_job_id: roundupsResult.id,
           }),
         });
 
         if (!temporalResponse.ok) {
-           console.error(`Failed to trigger Temporal workflow: ${temporalResponse.status} ${temporalResponse.statusText}`);
+           console.error(JSON.stringify({
+              error: `Failed to trigger Temporal workflow: ${temporalResponse.status} ${temporalResponse.statusText}`,
+              trace_id: traceId
+           }));
         } else {
-           console.log(`Temporal workflow triggered successfully for job: ${roundupsResult.id}`);
+           console.log(JSON.stringify({
+             message: `Temporal workflow triggered successfully for job: ${roundupsResult.id}`,
+             trace_id: traceId
+           }));
         }
-      } catch (e) {
-        console.error("Exception caught while triggering Temporal workflow:", e);
+      } catch (e: any) {
+        console.error(JSON.stringify({
+           error: "Exception caught while triggering Temporal workflow",
+           message: e?.message,
+           trace_id: traceId
+        }));
       }
     })());
 
 
     return responseWithLog(
-      JSON.stringify({ status: "accepted", roundups_job_id: roundupsResult.id }),
+      JSON.stringify({ status: "accepted", roundups_job_id: roundupsResult.id, trace_id: traceId }),
       202,
       request,
       env,

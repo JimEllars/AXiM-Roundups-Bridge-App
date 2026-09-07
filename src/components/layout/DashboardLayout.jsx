@@ -1,3 +1,4 @@
+import SystemStatusBanner from "./SystemStatusBanner";
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import * as FiIcons from 'react-icons/fi';
@@ -74,6 +75,7 @@ export default function DashboardLayout({ children }) {
             {menuItems.find(m => m.path === location.pathname)?.name || 'Dashboard'}
           </h1>
           <div className="flex items-center gap-4">
+            <SystemStatusBanner />
             <div className="w-8 h-8 rounded-full bg-slate-700 border border-slate-600"></div>
           </div>
         </header>
