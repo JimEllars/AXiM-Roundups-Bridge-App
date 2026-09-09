@@ -41,6 +41,8 @@ function response(
     headers: {
       "Content-Type": contentType,
       ...corsHeaders(request, env),
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "*",
       ...extraHeaders
     },
   });
@@ -82,6 +84,7 @@ export default {
         origin,
         duration_ms: duration,
         status,
+        idempotency_key: request.headers.get("x-idempotency-key") || undefined,
         ...extra,
       }));
     };
@@ -106,26 +109,25 @@ export default {
     if (request.method === "GET" && (url.pathname === "/health" || url.pathname === "/telemetry")) {
       const healthData = {
         status: "ok",
-        service: "roundups-edge-worker",
         timestamp: new Date().toISOString(),
-        environment: typeof env.ALLOWED_ORIGIN === 'string' ? 'production' : 'development'
+        edgeRegion: (request as any).cf?.colo || "local"
       };
-      return responseWithLog(JSON.stringify(healthData), 200, request, env, "application/json");
+      return responseWithLog(JSON.stringify(healthData), 200, request, env, "application/json", { "Cache-Control": "no-store" });
     }
 
     if (request.method !== "POST" || url.pathname !== "/api/v1/roundups/trigger") {
-      return responseWithLog("Not Found", 404, request, env);
+      return responseWithLog(JSON.stringify({ error: "Not Found", code: 404 }), 404, request, env, "application/json");
     }
 
     if (request.headers.get("Authorization") !== `Bearer ${env.API_SECRET}`) {
-      return responseWithLog("Unauthorized", 401, request, env);
+      return responseWithLog(JSON.stringify({ error: "Unauthorized", code: 401 }), 401, request, env, "application/json");
     }
 
     const idempotencyKey = request.headers.get("x-idempotency-key");
     if (idempotencyKey) {
       if (idempotencyCache.has(idempotencyKey)) {
          return responseWithLog(
-            JSON.stringify({ error: "Conflict: Duplicate request", trace_id: traceId }),
+            JSON.stringify({ error: "Conflict: Duplicate request", code: 409, trace_id: traceId }),
             409, request, env, "application/json"
          );
       }
@@ -142,16 +144,16 @@ export default {
       rawBody = await clonedRequest.text();
     } catch (e: any) {
       return responseWithLog(
-        JSON.stringify({ error: "Bad Request: Could not read body", message: e?.message, trace_id: traceId }),
+        JSON.stringify({ error: "Bad Request: Could not read body", code: 400, message: e?.message, trace_id: traceId }),
         400, request, env, "application/json"
       );
     }
 
     if (env.WEBHOOK_SECRET) {
-      const signatureHex = request.headers.get("X-Signature-256");
+      const signatureHex = request.headers.get("X-AXiM-Signature") || request.headers.get("X-Webhook-Secret");
       if (!signatureHex || !(await verifySignature(env.WEBHOOK_SECRET, signatureHex, rawBody))) {
         return responseWithLog(
-           JSON.stringify({ error: "Unauthorized: Invalid signature", trace_id: traceId }),
+           JSON.stringify({ error: "Unauthorized: Invalid signature", code: 401, trace_id: traceId }),
            401, request, env, "application/json"
         );
       }
@@ -162,7 +164,7 @@ export default {
       payload = JSON.parse(rawBody);
     } catch (e: any) {
       return responseWithLog(
-        JSON.stringify({ error: "Bad Request: Invalid JSON", message: e?.message, trace_id: traceId }),
+        JSON.stringify({ error: "Bad Request: Invalid JSON", code: 400, message: e?.message, trace_id: traceId }),
         400, request, env, "application/json"
       );
     }
@@ -170,7 +172,7 @@ export default {
     const validation = validateCampaignPayload(payload);
     if (!validation.isValid) {
       return responseWithLog(
-        JSON.stringify({ error: "Bad Request: Validation Failed", details: validation.error, trace_id: traceId }),
+        JSON.stringify({ error: "Bad Request: Validation Failed", code: 400, details: validation.error, trace_id: traceId }),
         400, request, env, "application/json"
       );
     }
@@ -188,7 +190,7 @@ export default {
 
     if (!campaignResponse.ok) {
       return responseWithLog(
-        JSON.stringify({ error: "Internal Server Error: Failed to fetch campaign", trace_id: traceId }),
+        JSON.stringify({ error: "Internal Server Error: Failed to fetch campaign", code: 500, trace_id: traceId }),
         500, request, env, "application/json"
       );
     }
@@ -197,7 +199,7 @@ export default {
     const campaign = campaigns[0];
     if (!campaign) {
       return responseWithLog(
-        JSON.stringify({ error: "Not Found: Campaign not found", trace_id: traceId }),
+        JSON.stringify({ error: "Not Found: Campaign not found", code: 404, trace_id: traceId }),
         404, request, env, "application/json"
       );
     }
@@ -224,7 +226,7 @@ export default {
     } catch (e: any) {
         clearTimeout(timeout);
         return responseWithLog(
-           JSON.stringify({ error: "Bad Gateway: Upstream timeout or network error", message: e?.message, trace_id: traceId }),
+           JSON.stringify({ error: "Bad Gateway: Upstream timeout or network error", code: 502, message: e?.message, trace_id: traceId }),
            502, request, env, "application/json", { "Retry-After": "30" }
         );
     }
@@ -233,7 +235,7 @@ export default {
 
     if (roundupsResponse.status !== 202) {
       return responseWithLog(
-        JSON.stringify({ error: "Roundups request failed", external_status: roundupsResponse.status, trace_id: traceId }),
+        JSON.stringify({ error: "Roundups request failed", code: 502, external_status: roundupsResponse.status, trace_id: traceId }),
         502,
         request,
         env,
@@ -244,7 +246,7 @@ export default {
     const roundupsResult = await roundupsResponse.json() as { id?: string };
     if (!roundupsResult.id) {
       return responseWithLog(
-        JSON.stringify({ error: "Bad Gateway: Roundups response did not include a job ID", trace_id: traceId }),
+        JSON.stringify({ error: "Bad Gateway: Roundups response did not include a job ID", code: 502, trace_id: traceId }),
         502, request, env, "application/json"
       );
     }
@@ -266,7 +268,7 @@ export default {
 
     if (!auditLogResponse.ok) {
       return responseWithLog(
-        JSON.stringify({ error: "Internal Server Error: Failed to write audit log", trace_id: traceId }),
+        JSON.stringify({ error: "Internal Server Error: Failed to write audit log", code: 500, trace_id: traceId }),
         500, request, env, "application/json"
       );
     }

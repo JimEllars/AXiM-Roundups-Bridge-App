@@ -18,8 +18,19 @@ app.use(cors({
 const PORT = process.env.PORT || 3001;
 
 // Health Check Endpoint
-app.get('/healthz', (req: Request, res: Response) => {
-  res.status(200).json({ status: 'healthy', timestamp: Date.now() });
+const START_TIME = Date.now();
+
+app.get('/healthz', async (req: Request, res: Response) => {
+  const uptime = Date.now() - START_TIME;
+  const timestamp = new Date().toISOString();
+  try {
+    const client = await getTemporalClient();
+    // Assuming if getTemporalClient() works without throwing, we're at least "connected".
+    // Alternatively, calling a quick ping operation if available.
+    res.status(200).json({ temporalConnection: 'connected', uptime, timestamp });
+  } catch (error) {
+    res.status(503).json({ temporalConnection: 'degraded', uptime, timestamp });
+  }
 });
 
 app.get('/ready', async (req: Request, res: Response) => {
