@@ -33,7 +33,7 @@ function response(
   status: number,
   request: Request,
   env: Env,
-  contentType = "text/plain",
+  contentType = "application/json",
   extraHeaders: Record<string, string> = {}
 ): Response {
   return new Response(body, {
@@ -74,6 +74,9 @@ export default {
 
     const origin = request.headers.get("Origin") || "unknown";
 
+    let requestCampaignId: string | undefined;
+    let roundupJobId: string | undefined;
+
     const logTelemetry = (status: number, extra: any = {}) => {
       const duration = Date.now() - startTime;
       console.log(JSON.stringify({
@@ -82,17 +85,27 @@ export default {
         method: request.method,
         url: request.url,
         origin,
+        campaign_id: requestCampaignId,
+        roundup_id: roundupJobId,
+        status_code: status,
         duration_ms: duration,
-        status,
         idempotency_key: request.headers.get("x-idempotency-key") || undefined,
         ...extra,
       }));
     };
 
     const _originalResponse = response;
-    const responseWithLog = (body: string, status: number, req: Request, e: Env, contentType = "text/plain", extraHeaders: Record<string, string> = {}) => {
+    const responseWithLog = (body: string, status: number, req: Request, e: Env, contentType = "application/json", extraHeaders: Record<string, string> = {}) => {
       let isError = status >= 400;
-      logTelemetry(status, isError ? { error: body } : {});
+      let errorBody = {};
+      if (isError) {
+         try {
+           errorBody = JSON.parse(body);
+         } catch {
+           errorBody = { error: body };
+         }
+      }
+      logTelemetry(status, isError ? { error: errorBody } : {});
       return _originalResponse(body, status, req, e, contentType, { "x-axim-trace-id": traceId, ...extraHeaders });
     };
 
@@ -100,13 +113,13 @@ export default {
 
     if (request.method === "OPTIONS") {
       if (request.headers.get("Origin") !== env.ALLOWED_ORIGIN) {
-        return responseWithLog("Forbidden", 403, request, env);
+        return responseWithLog(JSON.stringify({ error: "Forbidden" }), 403, request, env);
       }
       return responseWithLog("", 204, request, env);
     }
 
     // Health and Telemetry endpoints
-    if (request.method === "GET" && (url.pathname === "/health" || url.pathname === "/telemetry")) {
+    if (request.method === "GET" && (url.pathname === "/healthz" || url.pathname === "/health" || url.pathname === "/telemetry")) {
       const healthData = {
         status: "ok",
         timestamp: new Date().toISOString(),
@@ -127,7 +140,7 @@ export default {
     if (idempotencyKey) {
       if (idempotencyCache.has(idempotencyKey)) {
          return responseWithLog(
-            JSON.stringify({ error: "Conflict: Duplicate request", code: 409, trace_id: traceId }),
+            JSON.stringify({ error: "Duplicate request", code: 409, trace_id: traceId }),
             409, request, env, "application/json"
          );
       }
@@ -144,7 +157,7 @@ export default {
       rawBody = await clonedRequest.text();
     } catch (e: any) {
       return responseWithLog(
-        JSON.stringify({ error: "Bad Request: Could not read body", code: 400, message: e?.message, trace_id: traceId }),
+        JSON.stringify({ error: "Could not read body", code: 400, message: e?.message, trace_id: traceId }),
         400, request, env, "application/json"
       );
     }
@@ -153,7 +166,7 @@ export default {
       const signatureHex = request.headers.get("X-AXiM-Signature") || request.headers.get("X-Webhook-Secret");
       if (!signatureHex || !(await verifySignature(env.WEBHOOK_SECRET, signatureHex, rawBody))) {
         return responseWithLog(
-           JSON.stringify({ error: "Unauthorized: Invalid signature", code: 401, trace_id: traceId }),
+           JSON.stringify({ error: "Invalid signature", code: 401, trace_id: traceId }),
            401, request, env, "application/json"
         );
       }
@@ -164,15 +177,17 @@ export default {
       payload = JSON.parse(rawBody);
     } catch (e: any) {
       return responseWithLog(
-        JSON.stringify({ error: "Bad Request: Invalid JSON", code: 400, message: e?.message, trace_id: traceId }),
+        JSON.stringify({ error: "Invalid JSON", code: 400, message: e?.message, trace_id: traceId }),
         400, request, env, "application/json"
       );
     }
 
+    requestCampaignId = payload.campaign_id;
+
     const validation = validateCampaignPayload(payload);
     if (!validation.isValid) {
       return responseWithLog(
-        JSON.stringify({ error: "Bad Request: Validation Failed", code: 400, details: validation.error, trace_id: traceId }),
+        JSON.stringify({ error: "Validation Failed", code: 400, details: validation.error, trace_id: traceId }),
         400, request, env, "application/json"
       );
     }
@@ -190,7 +205,7 @@ export default {
 
     if (!campaignResponse.ok) {
       return responseWithLog(
-        JSON.stringify({ error: "Internal Server Error: Failed to fetch campaign", code: 500, trace_id: traceId }),
+        JSON.stringify({ error: "Failed to fetch campaign", code: 500, trace_id: traceId }),
         500, request, env, "application/json"
       );
     }
@@ -199,7 +214,7 @@ export default {
     const campaign = campaigns[0];
     if (!campaign) {
       return responseWithLog(
-        JSON.stringify({ error: "Not Found: Campaign not found", code: 404, trace_id: traceId }),
+        JSON.stringify({ error: "Campaign not found", code: 404, trace_id: traceId }),
         404, request, env, "application/json"
       );
     }
@@ -226,7 +241,7 @@ export default {
     } catch (e: any) {
         clearTimeout(timeout);
         return responseWithLog(
-           JSON.stringify({ error: "Bad Gateway: Upstream timeout or network error", code: 502, message: e?.message, trace_id: traceId }),
+           JSON.stringify({ error: "Upstream timeout or network error", code: 502, message: e?.message, trace_id: traceId }),
            502, request, env, "application/json", { "Retry-After": "30" }
         );
     }
@@ -246,10 +261,12 @@ export default {
     const roundupsResult = await roundupsResponse.json() as { id?: string };
     if (!roundupsResult.id) {
       return responseWithLog(
-        JSON.stringify({ error: "Bad Gateway: Roundups response did not include a job ID", code: 502, trace_id: traceId }),
+        JSON.stringify({ error: "Roundups response did not include a job ID", code: 502, trace_id: traceId }),
         502, request, env, "application/json"
       );
     }
+
+    roundupJobId = roundupsResult.id;
 
     const auditLogResponse = await fetch(new URL("/rest/v1/roundups_audit_logs", env.SUPABASE_URL), {
       method: "POST",
@@ -268,7 +285,7 @@ export default {
 
     if (!auditLogResponse.ok) {
       return responseWithLog(
-        JSON.stringify({ error: "Internal Server Error: Failed to write audit log", code: 500, trace_id: traceId }),
+        JSON.stringify({ error: "Failed to write audit log", code: 500, trace_id: traceId }),
         500, request, env, "application/json"
       );
     }

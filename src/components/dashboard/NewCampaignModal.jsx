@@ -53,7 +53,12 @@ export default function NewCampaignModal({ isOpen, onClose, onRefresh }) {
       }
       
       toast.success('Campaign Generation Initiated');
-      onRefresh();
+      onRefresh({ optimisticLog: {
+        id: 'opt-' + Date.now(),
+        campaign_id: formData.campaign_id,
+        status: 'processing',
+        created_at: new Date().toISOString()
+      } });
       onClose();
       setFormData({ campaign_id: '', keywords: '', notes: '' });
     } catch (err) {
