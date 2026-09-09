@@ -60,6 +60,10 @@ export async function finalizeRoundupLog(campaignId: string, roundupsJobId: stri
         status: 'completed',
         article_id: apiResponse.article?.id || null,
         article_url: apiResponse.article?.url || null, // Logs generated URL if available
+        article_title: apiResponse.article?.title || null,
+        article_content: apiResponse.article?.content || null,
+        article_featured_image: apiResponse.article?.featured_image || null,
+        article_meta_description: apiResponse.article?.meta_description || null,
         updated_at: new Date().toISOString(),
       })
       .eq('campaign_id', campaignId)
@@ -87,6 +91,9 @@ export async function finalizeRoundupLog(campaignId: string, roundupsJobId: stri
     if (error) {
       throw new Error(`Failed to log error to Supabase: ${error.message}`);
     }
+
+    // As per requirement: string error states -> explicit workflow failure
+    throw new Error(`Roundup Generation Failed: ${errorString}`);
   }
 }
 

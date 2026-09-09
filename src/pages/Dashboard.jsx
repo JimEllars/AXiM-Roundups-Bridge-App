@@ -28,7 +28,7 @@ export default function Dashboard() {
   const [editingCampaign, setEditingCampaign] = useState(null);
 
   useEffect(() => {
-    fetchDashboardData();
+    fetchDashboardData(false);
 
     // Set up Realtime listener
     const channel = supabase
@@ -39,7 +39,7 @@ export default function Dashboard() {
         table: 'roundups_audit_logs_20240520' 
       }, () => {
         setIsLive(true);
-        fetchDashboardData();
+        fetchDashboardData(true);
         setTimeout(() => setIsLive(false), 3000);
       })
       .subscribe((status) => {
@@ -56,8 +56,9 @@ export default function Dashboard() {
     };
   }, []);
 
-  const fetchDashboardData = async () => {
-    setLoading(true);
+  const fetchDashboardData = async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
+
     try {
       const [logsResponse, campaignsResponse] = await Promise.all([
         supabase.from('roundups_audit_logs').select('*').order('created_at', { ascending: false }),
@@ -149,7 +150,7 @@ const handleToggleStatus = async (campaign) => {
       toast.success('Campaign deleted');
     } catch (err) {
       // Refresh to restore state on error
-      fetchDashboardData();
+      fetchDashboardData(false);
       toast.error('Failed to delete campaign');
       console.error(err);
     }
@@ -390,14 +391,19 @@ const handleToggleStatus = async (campaign) => {
       <NewCampaignModal 
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
-        onRefresh={fetchDashboardData}
+        onRefresh={(payload) => {
+          if (payload && payload.optimisticLog) {
+            setRecentLogs(prev => [payload.optimisticLog, ...prev].slice(0, 8));
+          }
+          fetchDashboardData(true);
+        }}
       />
 
       <EditCampaignModal
         isOpen={!!editingCampaign}
         campaign={editingCampaign}
         onClose={() => setEditingCampaign(null)}
-        onRefresh={fetchDashboardData}
+        onRefresh={() => fetchDashboardData(true)}
       />
 
 
