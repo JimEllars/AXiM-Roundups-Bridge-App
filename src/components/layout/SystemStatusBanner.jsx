@@ -17,9 +17,7 @@ export default function SystemStatusBanner() {
       setStatus(s => ({ ...s, supabase: !error && data ? 'online' : 'error' }));
     } catch {
       setStatus(s => ({ ...s, supabase: 'error' }));
-    }
-
-    // Check Edge Worker
+    }    // Check Edge Worker
     const edgeUrl = import.meta.env.VITE_EDGE_WORKER_URL;
     if (!edgeUrl) {
       console.warn("VITE_EDGE_WORKER_URL missing, cannot check edge health");
@@ -27,12 +25,18 @@ export default function SystemStatusBanner() {
     } else {
       try {
         const url = new URL('/health', edgeUrl);
+        const startTime = performance.now();
         const res = await fetch(url.toString(), {
           headers: {
             "Content-Type": "application/json"
           }
         });
-        setStatus(s => ({ ...s, edge: res.ok ? 'online' : 'error' }));
+        const duration = performance.now() - startTime;
+        if (res.ok) {
+            setStatus(s => ({ ...s, edge: duration < 250 ? 'online' : 'degraded' }));
+        } else {
+            setStatus(s => ({ ...s, edge: 'error' }));
+        }
       } catch (e) {
         setStatus(s => ({ ...s, edge: 'error' }));
       }
@@ -58,13 +62,14 @@ export default function SystemStatusBanner() {
 
   useEffect(() => {
     checkStatus();
-    const interval = setInterval(checkStatus, 60000);
+    const interval = setInterval(checkStatus, 30000);
     return () => clearInterval(interval);
   }, []);
 
   const StatusDot = ({ state }) => (
     <div className={`w-2 h-2 rounded-full ${
       state === 'online' ? 'bg-emerald-400' :
+      state === 'degraded' ? 'bg-amber-400' :
       state === 'error' ? 'bg-rose-400' :
       'bg-slate-500 animate-pulse'
     }`} />

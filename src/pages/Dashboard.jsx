@@ -106,8 +106,9 @@ export default function Dashboard() {
     }
   };
 
-const handleToggleStatus = async (campaign) => {
+  const handleToggleStatus = async (campaign) => {
     const newStatus = campaign.campaign_status === 'paused' ? 'active' : 'paused';
+    const snapshot = [...campaigns];
 
     // Optimistic UI update
     setCampaigns(prev => prev.map(c =>
@@ -124,10 +125,8 @@ const handleToggleStatus = async (campaign) => {
       toast.success(`Campaign ${newStatus === 'active' ? 'resumed' : 'paused'}`);
     } catch (err) {
       // Revert on error
-      setCampaigns(prev => prev.map(c =>
-        c.id === campaign.id ? { ...c, campaign_status: campaign.campaign_status } : c
-      ));
-      toast.error('Failed to update campaign status');
+      setCampaigns(snapshot);
+      toast.error(`Failed to ${newStatus === 'active' ? 'resume' : 'pause'} campaign: ${err.message || 'Unknown error'}`);
       console.error(err);
     }
   };
@@ -136,6 +135,7 @@ const handleToggleStatus = async (campaign) => {
     if (!window.confirm(`Are you sure you want to delete campaign ${campaign.campaign_id}? This action cannot be undone.`)) {
       return;
     }
+    const snapshot = [...campaigns];
 
     // Optimistic UI update
     setCampaigns(prev => prev.filter(c => c.id !== campaign.id));
@@ -149,9 +149,9 @@ const handleToggleStatus = async (campaign) => {
       if (error) throw error;
       toast.success('Campaign deleted');
     } catch (err) {
-      // Refresh to restore state on error
-      fetchDashboardData(false);
-      toast.error('Failed to delete campaign');
+      // Revert on error
+      setCampaigns(snapshot);
+      toast.error(`Failed to delete campaign: ${err.message || 'Unknown error'}`);
       console.error(err);
     }
   };
@@ -203,8 +203,8 @@ const handleToggleStatus = async (campaign) => {
                 <SafeIcon icon={stat.icon} className={stat.color} />
               </div>
             </div>
-            <div className="text-3xl font-bold text-white mb-1 relative z-10">
-              {loading ? <div className="h-9 w-12 bg-slate-800 animate-pulse rounded" /> : stat.value}
+            <div className="text-2xl sm:text-3xl font-bold text-white mb-1 relative z-10">
+              {loading ? <div className="h-8 sm:h-9 w-16 bg-slate-800/50 animate-pulse rounded-md" /> : stat.value}
             </div>
             <div className="text-slate-400 text-sm font-medium">{stat.label}</div>
           </div>
@@ -235,7 +235,16 @@ const handleToggleStatus = async (campaign) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
-                  {campaigns.map((campaign) => (
+                  {loading && campaigns.length === 0 ? (
+                    Array.from({ length: 3 }).map((_, i) => (
+                      <tr key={`skeleton-${i}`} className="animate-pulse">
+                        <td className="px-6 py-4"><div className="h-4 bg-slate-800 rounded w-24"></div></td>
+                        <td className="px-6 py-4"><div className="h-4 bg-slate-800 rounded w-16"></div></td>
+                        <td className="px-6 py-4"><div className="h-4 bg-slate-800 rounded w-20"></div></td>
+                        <td className="px-6 py-4 text-right"><div className="h-4 bg-slate-800 rounded w-12 ml-auto"></div></td>
+                      </tr>
+                    ))
+                  ) : campaigns.map((campaign) => (
                     <tr key={campaign.id} className="hover:bg-slate-800/30 transition-colors group">
                       <td className="px-6 py-4">
                         <span className="font-medium text-slate-200">{campaign.campaign_id}</span>
@@ -254,12 +263,20 @@ const handleToggleStatus = async (campaign) => {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                          <CampaignActionMenu
-                            campaign={campaign}
-                            onEdit={() => setEditingCampaign(campaign)}
-                            onToggleStatus={() => handleToggleStatus(campaign)}
-                            onDelete={() => handleDeleteCampaign(campaign)}
-                          />
+                          {loading ? (
+                            <div className="flex gap-2">
+                                <div className="h-6 w-6 bg-slate-800 rounded animate-pulse" />
+                                <div className="h-6 w-6 bg-slate-800 rounded animate-pulse" />
+                                <div className="h-6 w-6 bg-slate-800 rounded animate-pulse" />
+                            </div>
+                          ) : (
+                            <CampaignActionMenu
+                              campaign={campaign}
+                              onEdit={() => setEditingCampaign(campaign)}
+                              onToggleStatus={() => handleToggleStatus(campaign)}
+                              onDelete={() => handleDeleteCampaign(campaign)}
+                            />
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -296,7 +313,16 @@ const handleToggleStatus = async (campaign) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
-                {recentLogs.map((log) => (
+                {loading && recentLogs.length === 0 ? (
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <tr key={`skeleton-log-${i}`} className="animate-pulse">
+                      <td className="px-6 py-4"><div className="h-4 bg-slate-800 rounded w-24"></div></td>
+                      <td className="px-6 py-4"><div className="h-4 bg-slate-800 rounded w-16"></div></td>
+                      <td className="px-6 py-4"><div className="h-4 bg-slate-800 rounded w-16"></div></td>
+                      <td className="px-6 py-4 text-right"><div className="h-4 bg-slate-800 rounded w-8 ml-auto"></div></td>
+                    </tr>
+                  ))
+                ) : recentLogs.map((log) => (
                   <tr key={log.id} className="hover:bg-slate-800/30 transition-colors group">
                     <td className="px-6 py-4">
                       <span className="font-medium text-slate-200">{log.campaign_id}</span>
