@@ -97,6 +97,8 @@ export default {
     const _originalResponse = response;
     const responseWithLog = (body: string, status: number, req: Request, e: Env, contentType = "application/json", extraHeaders: Record<string, string> = {}) => {
       let isError = status >= 400;
+      const durationMs = Date.now() - startTime;
+      extraHeaders["Server-Timing"] = `total;dur=${durationMs}`;
       let errorBody = {};
       if (isError) {
          try {
@@ -112,17 +114,25 @@ export default {
     const url = new URL(request.url);
 
     if (request.method === "OPTIONS") {
-      if (request.headers.get("Origin") !== env.ALLOWED_ORIGIN) {
+      const allowedOrigin = env.ALLOWED_ORIGIN || "*";
+      if (allowedOrigin !== "*" && request.headers.get("Origin") !== allowedOrigin) {
         return responseWithLog(JSON.stringify({ error: "Forbidden" }), 403, request, env);
       }
-      return responseWithLog("", 204, request, env);
+      return responseWithLog("", 204, request, env, "application/json", {
+        "Access-Control-Allow-Origin": allowedOrigin,
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, x-idempotency-key, x-axim-trace-id",
+        "Access-Control-Max-Age": "86400"
+      });
     }
 
     // Health and Telemetry endpoints
     if (request.method === "GET" && (url.pathname === "/healthz" || url.pathname === "/health" || url.pathname === "/telemetry")) {
       const healthData = {
-        status: "ok",
+        status: "healthy",
         timestamp: new Date().toISOString(),
+        worker: "roundups-edge",
+        version: "1.0.0",
         edgeRegion: (request as any).cf?.colo || "local"
       };
       return responseWithLog(JSON.stringify(healthData), 200, request, env, "application/json", { "Cache-Control": "no-store" });
