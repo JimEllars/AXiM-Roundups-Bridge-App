@@ -23,7 +23,7 @@ export default function AuditLogs() {
     let channel;
     try {
       channel = supabase
-        .channel('audit-logs-updates')
+        .channel('public:audit_logs')
         .on('postgres_changes', {
           event: '*',
           schema: 'public',

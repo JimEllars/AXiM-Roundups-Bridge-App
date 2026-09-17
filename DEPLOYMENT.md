@@ -41,3 +41,14 @@ This ensures that builds are only run when relevant codebase areas are updated.
 
 ## Edge Worker Webhook Validation
 The Edge Worker now requires an optional `WEBHOOK_SECRET` environment variable to securely validate HMAC SHA-256 signatures for incoming payload requests. Make sure this is set in your Cloudflare deployment via `wrangler secret put WEBHOOK_SECRET`.
+
+### Edge Worker Environment Variables Update
+The `roundups-edge-worker` now strictly requires the following environment variables to ensure secure Temporal connections:
+* `TEMPORAL_REST_URL`
+* `TEMPORAL_API_KEY`
+* `SUPABASE_URL`
+* `SUPABASE_SERVICE_ROLE_KEY`
+It enforces these checks and returns a 500 status code if any are missing.
+
+### Gateway Changes
+The Temporal Gateway exposes `/health` instead of `/healthz` and performs graceful shutdown on `SIGINT` and `SIGTERM`.
