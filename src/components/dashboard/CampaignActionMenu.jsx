@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import toast from 'react-hot-toast';
 import * as FiIcons from 'react-icons/fi';
 import SafeIcon from '../common/SafeIcon';
 
@@ -25,6 +26,10 @@ export default function CampaignActionMenu({ campaign, onEdit, onToggleStatus, o
     setIsProcessing(true);
     try {
       await action();
+      toast.success('Action completed successfully');
+    } catch (err) {
+      toast.error('Action failed. Rolling back...');
+      console.error(err);
     } finally {
       setIsProcessing(false);
     }

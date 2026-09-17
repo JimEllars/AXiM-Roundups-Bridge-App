@@ -99,6 +99,9 @@ export default {
       let isError = status >= 400;
       const durationMs = Date.now() - startTime;
       extraHeaders["Server-Timing"] = `total;dur=${durationMs}`;
+      extraHeaders["cf-edge-latency"] = durationMs.toString();
+      extraHeaders["cf-ray"] = request.headers.get("cf-ray") || "unknown";
+      extraHeaders["x-axim-execution-id"] = traceId;
       let errorBody = {};
       if (isError) {
          try {
@@ -112,6 +115,15 @@ export default {
     };
 
     const url = new URL(request.url);
+
+    // Strict env checking
+    const requiredEnvs = ['TEMPORAL_REST_URL', 'TEMPORAL_API_KEY', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
+    for (const key of requiredEnvs) {
+      if (!env[key as keyof Env]) {
+        return responseWithLog(JSON.stringify({ error: `Missing required environment variable: ${key}`, code: 500 }), 500, request, env, "application/json");
+      }
+    }
+
 
     if (request.method === "OPTIONS") {
       const allowedOrigin = env.ALLOWED_ORIGIN || "*";

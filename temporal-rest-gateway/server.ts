@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { Connection, Client } from '@temporalio/client';
+import http from 'http';
 
 dotenv.config();
 
@@ -20,28 +21,15 @@ const PORT = process.env.PORT || 3001;
 // Health Check Endpoint
 const START_TIME = Date.now();
 
-app.get('/healthz', async (req: Request, res: Response) => {
+app.get('/health', async (req: Request, res: Response) => {
   const uptime = Date.now() - START_TIME;
   const timestamp = new Date().toISOString();
   try {
-    const client = await getTemporalClient();
+    await getTemporalClient();
     // Assuming if getTemporalClient() works without throwing, we're at least "connected".
-    // Alternatively, calling a quick ping operation if available.
-    res.status(200).json({ temporalConnection: 'connected', uptime, timestamp });
+    res.status(200).json({ status: 'healthy', temporalConnected: true, uptime, timestamp });
   } catch (error) {
-    res.status(503).json({ temporalConnection: 'degraded', uptime, timestamp });
-  }
-});
-
-app.get('/ready', async (req: Request, res: Response) => {
-  try {
-    const client = await getTemporalClient();
-    // Assuming if getTemporalClient() works, we are connected.
-    // Realistically you'd want a more robust check but this suffices for "connection verification".
-    res.status(200).json({ status: 'ready', temporalConnection: 'ok', timestamp: Date.now() });
-  } catch (error) {
-    console.error('Temporal connection readiness check failed:', error);
-    res.status(503).json({ status: 'unavailable', error: 'Temporal connection failed' });
+    res.status(503).json({ status: 'degraded', temporalConnected: false, uptime, timestamp });
   }
 });
 
@@ -68,6 +56,7 @@ const authenticate = (req: Request, res: Response, next: NextFunction) => {
 };
 
 let temporalClient: Client | null = null;
+let temporalConnection: Connection | null = null;
 
 async function getTemporalClient() {
   if (temporalClient) return temporalClient;
@@ -88,10 +77,10 @@ async function getTemporalClient() {
     };
   }
 
-  const connection = await Connection.connect(connectionOptions);
+  temporalConnection = await Connection.connect(connectionOptions);
 
   temporalClient = new Client({
-    connection,
+    connection: temporalConnection,
     namespace,
   });
 
@@ -107,12 +96,15 @@ const startWorkflowLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-app.post('/api/workflows/start', startWorkflowLimiter, authenticate, async (req: Request, res: Response) => {
+app.post(['/api/workflows/start', '/workflow/start'], startWorkflowLimiter, authenticate, async (req: Request, res: Response) => {
   try {
     const { campaign_id, roundups_job_id } = req.body;
 
     if (!campaign_id || !roundups_job_id) {
-      return res.status(400).json({ error: 'Missing campaign_id or roundups_job_id' });
+      return res.status(400).json({
+        error: 'Missing required fields',
+        details: 'Both campaign_id and roundups_job_id are required in the request body.'
+      });
     }
 
     const client = await getTemporalClient();
@@ -131,6 +123,34 @@ app.post('/api/workflows/start', startWorkflowLimiter, authenticate, async (req:
   }
 });
 
-app.listen(PORT, () => {
+const server = http.createServer(app);
+
+server.listen(PORT, () => {
   console.log(`[REST Gateway] Listening on port ${PORT}`);
 });
+
+// Graceful Shutdown
+const shutdown = async (signal: string) => {
+  console.log(`\n[REST Gateway] Received ${signal}. Shutting down gracefully...`);
+
+  server.close(async () => {
+    console.log('[REST Gateway] HTTP server closed.');
+
+    if (temporalConnection) {
+      console.log('[REST Gateway] Closing Temporal connection...');
+      await temporalConnection.close();
+      console.log('[REST Gateway] Temporal connection closed.');
+    }
+
+    process.exit(0);
+  });
+
+  // Force exit after 10 seconds if graceful shutdown fails
+  setTimeout(() => {
+    console.error('[REST Gateway] Could not close connections in time, forcefully shutting down');
+    process.exit(1);
+  }, 10000);
+};
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

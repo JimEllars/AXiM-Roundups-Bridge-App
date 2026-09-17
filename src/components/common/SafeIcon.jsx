@@ -1,6 +1,6 @@
 import React from 'react';
 import * as FiIcons from 'react-icons/fi';
-import { FiAlertTriangle } from 'react-icons/fi';
+import { FiCircle } from 'react-icons/fi';
 
 const SafeIcon = ({ icon, name, ...props }) => {
   let IconComponent;
@@ -9,7 +9,7 @@ const SafeIcon = ({ icon, name, ...props }) => {
   } catch (e) {
     IconComponent = null;
   }
-  return IconComponent ? React.createElement(IconComponent, props) : <FiAlertTriangle {...props} />;
+  return IconComponent ? React.createElement(IconComponent, props) : <FiCircle {...props} />;
 };
 
 export default SafeIcon;

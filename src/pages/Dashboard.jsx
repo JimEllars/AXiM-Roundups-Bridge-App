@@ -31,12 +31,24 @@ export default function Dashboard() {
     fetchDashboardData(false);
 
     // Set up Realtime listener
+
+    const campaignsChannel = supabase
+      .channel('public:campaigns')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'affiliate_campaigns'
+      }, () => {
+        fetchDashboardData(true);
+      })
+      .subscribe();
+
     const channel = supabase
-      .channel('bridge-updates')
+      .channel('public:audit_logs')
       .on('postgres_changes', { 
         event: '*', 
         schema: 'public', 
-        table: 'roundups_audit_logs_20240520' 
+        table: 'roundups_audit_logs'
       }, () => {
         setIsLive(true);
         fetchDashboardData(true);
@@ -51,8 +63,10 @@ export default function Dashboard() {
         }
       });
 
-    return () => {
+
+  return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(campaignsChannel);
     };
   }, []);
 
@@ -106,6 +120,7 @@ export default function Dashboard() {
     }
   };
 
+
   const handleToggleStatus = async (campaign) => {
     const newStatus = campaign.campaign_status === 'paused' ? 'active' : 'paused';
     const snapshot = [...campaigns];
@@ -121,23 +136,18 @@ export default function Dashboard() {
         .update({ campaign_status: newStatus })
         .eq('id', campaign.id);
 
-      if (error) throw error;
-      toast.success(`Campaign ${newStatus === 'active' ? 'resumed' : 'paused'}`);
+      if (error) {
+        setCampaigns(snapshot);
+        throw error;
+      }
     } catch (err) {
-      // Revert on error
       setCampaigns(snapshot);
-      toast.error(`Failed to ${newStatus === 'active' ? 'resume' : 'pause'} campaign: ${err.message || 'Unknown error'}`);
-      console.error(err);
+      throw err; // So toast catches it
     }
   };
 
   const handleDeleteCampaign = async (campaign) => {
-    if (!window.confirm(`Are you sure you want to delete campaign ${campaign.campaign_id}? This action cannot be undone.`)) {
-      return;
-    }
     const snapshot = [...campaigns];
-
-    // Optimistic UI update
     setCampaigns(prev => prev.filter(c => c.id !== campaign.id));
 
     try {
@@ -146,21 +156,23 @@ export default function Dashboard() {
         .delete()
         .eq('id', campaign.id);
 
-      if (error) throw error;
-      toast.success('Campaign deleted');
+      if (error) {
+        setCampaigns(snapshot);
+        throw error;
+      }
     } catch (err) {
-      // Revert on error
       setCampaigns(snapshot);
-      toast.error(`Failed to delete campaign: ${err.message || 'Unknown error'}`);
-      console.error(err);
+      throw err;
     }
   };
 
+
+
   const statCards = [
-    { label: 'Total Jobs', value: stats.total, icon: FiTrendingUp, color: 'text-blue-400', bg: 'bg-blue-400/10' },
-    { label: 'Completed', value: stats.completed, icon: FiCheckCircle, color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
-    { label: 'In Progress', value: stats.generating, icon: FiClock, color: 'text-amber-400', bg: 'bg-amber-400/10' },
-    { label: 'Failed', value: stats.failed, icon: FiAlertCircle, color: 'text-red-400', bg: 'bg-red-400/10' },
+    { label: 'Total Executions', value: stats.total, icon: FiIcons.FiTrendingUp, color: 'text-blue-400', bg: 'bg-blue-400/10' },
+    { label: 'Completed', value: stats.completed, icon: FiIcons.FiCheckCircle, color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
+    { label: 'In Progress', value: stats.generating ? stats.generating : 0, icon: FiIcons.FiClock, color: 'text-amber-400', bg: 'bg-amber-400/10' },
+    { label: 'Failed', value: stats.failed, icon: FiIcons.FiAlertCircle, color: 'text-red-400', bg: 'bg-red-400/10' },
   ];
 
   return (
