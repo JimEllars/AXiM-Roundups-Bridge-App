@@ -56,6 +56,30 @@ export default function Settings() {
         { label: 'Polling Interval', value: '45 Seconds', status: 'Default', active: true },
         { label: 'Max Retry Attempts', value: '10 Attempts', status: 'Native', active: true }
       ]
+    },
+    {
+      title: 'Ecosystem Integrations (Core & Onyx)',
+      icon: FiShield,
+      items: [
+        {
+          label: 'AXiM Core Event Webhook',
+          value: 'Linked to AXiM Core v1.2 / api.axim.us.com',
+          status: 'Integrated',
+          active: true
+        },
+        {
+          label: 'Onyx Knowledge Ingestion',
+          value: 'Linked to Onyx AI Knowledge Engine',
+          status: 'Integrated',
+          active: true
+        },
+        {
+          label: 'WordPress Output Target',
+          value: 'axim.us.com (Live CMS)',
+          status: 'Configured',
+          active: true
+        }
+      ]
     }
   ];
 

@@ -89,13 +89,13 @@ export default function NewCampaignModal({ isOpen, onClose, onRefresh }) {
 
           <div className="space-y-4">
             <div className="space-y-1">
-              <label className="text-sm font-medium text-slate-300">Internal Campaign ID</label>
+              <label className="text-sm font-medium text-slate-300">Campaign ID or Partner Name</label>
               <div className="relative">
                 <SafeIcon icon={FiLayers} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input 
                   type="text" 
                   required
-                  placeholder="e.g. Q2-RETAIL-001"
+                  placeholder="e.g. ClickRank, Teachable, or UUID"
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-12 pr-4 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                   value={formData.campaign_id}
                   onChange={(e) => setFormData({...formData, campaign_id: e.target.value})}

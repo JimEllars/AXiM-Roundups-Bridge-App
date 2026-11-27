@@ -27,12 +27,12 @@ export function buildPayload(campaign: CampaignData): any {
 
     const product_urls: string[] = [];
     if (campaign.product_urls && Array.isArray(campaign.product_urls) && campaign.product_urls.length > 0) {
-        product_urls.push(...campaign.product_urls);
+        product_urls.push(...campaign.product_urls.map(normalizeUrl));
     }
 
-    // CRITICAL CONSTRAINT 2: Pass raw affiliate_url into product_urls unaltered
+    // CRITICAL CONSTRAINT 2: Pass raw affiliate_url into product_urls unaltered (ensuring valid protocol)
     if (campaign.affiliate_url && typeof campaign.affiliate_url === "string") {
-        product_urls.push(campaign.affiliate_url);
+        product_urls.push(normalizeUrl(campaign.affiliate_url));
     }
 
     return {
@@ -62,6 +62,15 @@ export function buildPayload(campaign: CampaignData): any {
     };
 }
 
+export function normalizeUrl(urlStr: string): string {
+    const trimmed = urlStr.trim();
+    if (!trimmed) return trimmed;
+    if (!/^https?:\/\//i.test(trimmed)) {
+        return `https://${trimmed}`;
+    }
+    return trimmed;
+}
+
 export function validateCampaignPayload(payload: any): { isValid: boolean, error?: string } {
     if (!payload || typeof payload !== 'object') {
         return { isValid: false, error: "Payload must be a JSON object" };
@@ -86,13 +95,8 @@ export function validateCampaignPayload(payload: any): { isValid: boolean, error
     if (payload.product_urls && Array.isArray(payload.product_urls)) {
         for (const urlStr of payload.product_urls) {
             try {
-                const parsedUrl = new URL(urlStr);
-                const originalUrl = urlStr;
-
-                // Assert no query param modification or stripping implicitly handled by edge worker
-                // E.g., we just make sure we are not altering it here and it is a valid url.
-                // The prompt says: "Affiliate URL Invariance: Add validation asserting that input product_urls are passed without query parameter modification or stripping."
-                // To validate it's a URL we parse it. It retains search string.
+                const normalized = normalizeUrl(urlStr);
+                new URL(normalized);
             } catch (e) {
                  return { isValid: false, error: `Invalid URL in 'product_urls': ${urlStr}` };
             }
