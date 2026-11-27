@@ -132,7 +132,8 @@ export default function Dashboard() {
   };
 
   const handleDeleteCampaign = async (campaign) => {
-    if (!window.confirm(`Are you sure you want to delete campaign ${campaign.campaign_id}? This action cannot be undone.`)) {
+    const campaignName = campaign.partner_name || campaign.campaign_id || campaign.id;
+    if (!window.confirm(`Are you sure you want to delete campaign ${campaignName}? This action cannot be undone.`)) {
       return;
     }
     const snapshot = [...campaigns];
@@ -247,7 +248,14 @@ export default function Dashboard() {
                   ) : campaigns.map((campaign) => (
                     <tr key={campaign.id} className="hover:bg-slate-800/30 transition-colors group">
                       <td className="px-6 py-4">
-                        <span className="font-medium text-slate-200">{campaign.campaign_id}</span>
+                        <span className="font-medium text-slate-200">
+                          {campaign.partner_name || campaign.campaign_id || campaign.id}
+                        </span>
+                        {campaign.product_category && (
+                          <span className="block text-[11px] text-slate-500 font-normal">
+                            {campaign.product_category}
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-tighter ${

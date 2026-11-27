@@ -72,6 +72,13 @@ export async function finalizeRoundupLog(campaignId: string, roundupsJobId: stri
     if (error) {
       throw new Error(`Failed to finalize roundup log in Supabase: ${error.message}`);
     }
+
+    // Dispatch event to AXiM Core & Onyx systems
+    try {
+      await notifyCoreAndOnyx(campaignId, roundupsJobId, apiResponse.article);
+    } catch (e) {
+      console.warn('Failed to notify Core/Onyx endpoints:', e);
+    }
   } else {
     // Failure cases: timeout, errors, or any other non-draft states
     const errorString = apiResponse.errors
@@ -95,6 +102,61 @@ export async function finalizeRoundupLog(campaignId: string, roundupsJobId: stri
     // As per requirement: string error states -> explicit workflow failure
     throw new Error(`Roundup Generation Failed: ${errorString}`);
   }
+}
+
+/**
+ * Notifies AXiM Core and Onyx systems of newly published affiliate articles.
+ */
+export async function notifyCoreAndOnyx(campaignId: string, roundupsJobId: string, article: any): Promise<void> {
+  const coreWebhookUrl = process.env.AXIM_CORE_WEBHOOK_URL;
+  const onyxWebhookUrl = process.env.ONYX_INGEST_WEBHOOK_URL;
+  const sharedSecret = process.env.BRIDGE_SYSTEM_SECRET || process.env.API_SECRET || '';
+
+  const notificationPayload = {
+    event: 'article.published',
+    source: 'axim-roundups-bridge',
+    timestamp: new Date().toISOString(),
+    campaignId,
+    roundupsJobId,
+    article: {
+      id: article?.id || null,
+      title: article?.title || null,
+      url: article?.url || null,
+      featured_image: article?.featured_image || null,
+      meta_description: article?.meta_description || null,
+    }
+  };
+
+  const dispatch = async (url: string, systemName: string) => {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': sharedSecret ? `Bearer ${sharedSecret}` : '',
+          'X-AXiM-Source': 'roundups-bridge',
+        },
+        body: JSON.stringify(notificationPayload)
+      });
+      if (!res.ok) {
+        console.warn(`[Integration] ${systemName} returned status ${res.status}`);
+      } else {
+        console.log(`[Integration] Successfully dispatched article to ${systemName}`);
+      }
+    } catch (err: any) {
+      console.warn(`[Integration] Failed to dispatch to ${systemName}: ${err?.message}`);
+    }
+  };
+
+  const promises: Promise<void>[] = [];
+  if (coreWebhookUrl) {
+    promises.push(dispatch(coreWebhookUrl, 'AXiM Core'));
+  }
+  if (onyxWebhookUrl) {
+    promises.push(dispatch(onyxWebhookUrl, 'Onyx Knowledge Engine'));
+  }
+
+  await Promise.allSettled(promises);
 }
 
 

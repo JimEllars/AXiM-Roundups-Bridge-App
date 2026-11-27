@@ -202,26 +202,56 @@ export default {
       );
     }
 
-    const campaignUrl = new URL("/rest/v1/campaigns", env.SUPABASE_URL);
-    campaignUrl.searchParams.set("id", `eq.${payload.campaign_id}`);
-    campaignUrl.searchParams.set("select", "*");
+    // Attempt query on affiliate_campaigns first (canonical table), fallback to campaigns
+    let campaign: Record<string, unknown> | null = null;
+    const candidateTables = ["affiliate_campaigns", "campaigns"];
 
-    const campaignResponse = await fetch(campaignUrl, {
-      headers: {
-        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-      },
-    });
+    for (const tableName of candidateTables) {
+      try {
+        const campaignUrl = new URL(`/rest/v1/${tableName}`, env.SUPABASE_URL);
+        // Try id match first
+        campaignUrl.searchParams.set("id", `eq.${payload.campaign_id}`);
+        campaignUrl.searchParams.set("select", "*");
 
-    if (!campaignResponse.ok) {
-      return responseWithLog(
-        JSON.stringify({ error: "Failed to fetch campaign", code: 500, trace_id: traceId }),
-        500, request, env, "application/json"
-      );
+        let campaignResponse = await fetch(campaignUrl, {
+          headers: {
+            apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+            Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+        });
+
+        if (campaignResponse.ok) {
+          const results = await campaignResponse.json() as Array<Record<string, unknown>>;
+          if (results && results.length > 0) {
+            campaign = results[0];
+            break;
+          }
+        }
+
+        // If not found by UUID id, attempt match by partner_name or campaign_id column if present
+        const altUrl = new URL(`/rest/v1/${tableName}`, env.SUPABASE_URL);
+        altUrl.searchParams.set("or", `(partner_name.eq.${payload.campaign_id},campaign_id.eq.${payload.campaign_id})`);
+        altUrl.searchParams.set("select", "*");
+
+        const altResponse = await fetch(altUrl, {
+          headers: {
+            apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+            Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+        });
+
+        if (altResponse.ok) {
+          const altResults = await altResponse.json() as Array<Record<string, unknown>>;
+          if (altResults && altResults.length > 0) {
+            campaign = altResults[0];
+            break;
+          }
+        }
+      } catch (err) {
+        console.warn(`Error querying table ${tableName}:`, err);
+      }
     }
 
-    const campaigns = await campaignResponse.json() as Array<Record<string, unknown>>;
-    const campaign = campaigns[0];
     if (!campaign) {
       return responseWithLog(
         JSON.stringify({ error: "Campaign not found", code: 404, trace_id: traceId }),
@@ -241,10 +271,12 @@ export default {
           },
           body: JSON.stringify(buildPayload({
             campaign_id: String(campaign.id ?? payload.campaign_id),
+            headline: typeof campaign.headline === "string" ? campaign.headline : (typeof campaign.partner_name === "string" ? `Best ${campaign.partner_name} Solutions and Review` : undefined),
+            target_audience: typeof campaign.target_audience === "string" ? campaign.target_audience : undefined,
             product_urls: Array.isArray(campaign.product_urls) ? campaign.product_urls.map(String) : undefined,
             affiliate_url: typeof campaign.affiliate_url === "string" ? campaign.affiliate_url : undefined,
             keywords: payload.keywords || (typeof campaign.keywords === "string" ? campaign.keywords : undefined),
-            is_software: campaign.is_software === true,
+            is_software: campaign.is_software === true || (typeof campaign.product_category === "string" && campaign.product_category.toLowerCase().includes("software")),
           })),
           signal: controller.signal as any
         });
